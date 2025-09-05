@@ -2,4 +2,4 @@
 my class note
 
 ## civics
-(我國政府)[https://klhrd.github.io/class_note/civics/government/]
+[我國政府](https://klhrd.github.io/class_note/civics/government/)
