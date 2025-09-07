@@ -1,5 +1,6 @@
 # class_note
 my class note
+**不允許外傳**
 
 ## 公民
 - [我國政府](https://klhrd.github.io/class_note/civics/government/)
