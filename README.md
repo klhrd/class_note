@@ -6,6 +6,7 @@ my class note
 - 9th
   - U1 [歐洲：自然環境、人口與產業](https://klhrd.github.io/class_note/geography/9th/U1/)
   - U2 [歐洲聯盟與俄羅斯：發展、環境與產業](https://klhrd.github.io/class_note/geography/9th/U2/)
+  - U3 [北美洲地理、文化與經濟](https://klhrd.github.io/class_note/geography/9th/U3/)
 
 ## 歷史
 - 9th
