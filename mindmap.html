@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markmap 動態筆記瀏覽器</title>
+    <style>
+        /* 基礎樣式和佈局 */
+        body { 
+            margin: 0; 
+            display: flex; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: #333;
+            background-color: #fff;
+        }
+        /* 側邊欄樣式 */
+        #sidebar {
+            width: 280px; /* 側邊欄寬度 */
+            min-width: 280px;
+            height: 100vh;
+            overflow-y: auto;
+            border-right: 1px solid #e0e0e0;
+            padding: 20px 15px;
+            box-sizing: border-box;
+            background-color: #f7f7f7;
+            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.05);
+        }
+        #sidebar h3 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: #1a73e8;
+            font-size: 1.25rem;
+            border-bottom: 2px solid #1a73e8;
+            padding-bottom: 5px;
+        }
+        /* 檔案連結樣式 */
+        .file-link {
+            display: block;
+            padding: 8px 10px;
+            margin-bottom: 5px;
+            cursor: pointer;
+            border-radius: 6px;
+            text-decoration: none;
+            color: #333;
+            background-color: #fff;
+            transition: all 0.2s ease-in-out;
+            font-size: 0.9rem;
+            border: 1px solid #eee;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .file-link:hover {
+            background-color: #e0e7ff;
+            color: #1a73e8;
+            border-color: #1a73e8;
+        }
+        .file-link.active {
+            font-weight: bold;
+            background-color: #1a73e8;
+            color: #ffffff;
+            border-color: #1a73e8;
+        }
+
+        /* Markmap 容器樣式 */
+        #markmap-container {
+            flex-grow: 1; 
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+        #markmap {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        .loading-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.5rem;
+            color: #777;
+        }
+        .error-message {
+            color: red;
+            padding: 20px;
+            font-size: 1.1rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h3>📂 筆記檔案列表</h3>
+        <div id="file-list">
+            <!-- 檔案連結會在這裡動態生成 -->
+            <p class="loading-text" style="font-size: 1rem;">正在載入...</p>
+        </div>
+    </div>
+    <div id="markmap-container">
+        <svg id="markmap"></svg>
+    </div>
+    
+    <!-- 引入 Markmap 必要函式庫 (透過 CDN) -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.17"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.17"></script>
+
+    <script>
+        // =================================================================
+        //                 🔔 務必修改此處的 GitHub 資訊 🔔
+        // =================================================================
+        const GITHUB_USERNAME = 'klhrd';    // 您的 GitHub 使用者名稱
+        const REPO_NAME = 'class_note';         // 您的 GitHub 倉庫名稱
+        const TARGET_PATH = '';                     // 要掃描的子資料夾路徑，根目錄請用 ''
+        // =================================================================
+        
+        const API_URL = `https://api.github.com/repos/${GITHUB_USERNAME}/${REPO_NAME}/contents/${TARGET_PATH}`;
+        const MARKDOWN_EXTENSION = '.md';
+
+        // Map 用來儲存檔案路徑到 DOM 元素的映射，方便樣式控制
+        let fileLinksMap = new Map(); 
+
+        // ====== 1. Markmap 渲染核心函式 ======
+        async function renderMarkmap(filePath, sourceLink) {
+            const markmapEl = document.getElementById('markmap');
+            markmapEl.innerHTML = `<div class="loading-text">正在載入 ${filePath} 的內容...</div>`;
+            
+            try {
+                // 1. 取得 Markdown 內容 (從 Pages 服務取得)
+                const response = await fetch(filePath);
+                if (!response.ok) {
+                    throw new Error(`無法載入檔案: ${filePath} (${response.status})`);
+                }
+                const markdownContent = await response.text();
+                
+                // 2. 轉換 Markdown 為 Markmap 資料結構
+                const { transform } = window.markmap;
+                const { root } = transform(markdownContent);
+                
+                // 3. 渲染 Markmap
+                markmapEl.innerHTML = '';
+                window.markmap.Markmap.create(markmapEl, null, root);
+                
+                // 4. 處理 Hash 與樣式更新
+                if (sourceLink) {
+                    // 移除所有連結的 active 樣式
+                    document.querySelectorAll('.file-link').forEach(l => l.classList.remove('active'));
+                    
+                    // 設定當前連結為 active
+                    sourceLink.classList.add('active');
+                    
+                    // 更新網址 Hash (使用 pushState 不會在瀏覽器歷史中產生額外記錄)
+                    history.pushState(null, null, `#${filePath}`);
+                }
+
+            } catch (error) {
+                console.error("Markmap 渲染錯誤:", error);
+                markmapEl.innerHTML = `<div class="error-message">錯誤：無法渲染 Markmap。請檢查檔案路徑或內容。${error.message}</div>`;
+            }
+        }
+
+        // ====== 2. 透過 GitHub API 取得檔案列表並設定事件 ======
+        async function fetchFilesAndSetupList() {
+            const fileListContainer = document.getElementById('file-list');
+            fileListContainer.innerHTML = '<p class="loading-text" style="font-size: 1rem;">正在從 GitHub 載入檔案列表...</p>';
+
+            try {
+                // 透過 GitHub API 取得目錄內容
+                const response = await fetch(API_URL);
+                
+                if (!response.ok) {
+                    throw new Error(`GitHub API 請求失敗 (Status: ${response.status})。請確認 GITHUB_USERNAME/REPO_NAME/TARGET_PATH 是否正確設定。`);
+                }
+                
+                const contents = await response.json();
+                
+                // 過濾出所有的 Markdown 檔案 (.md)
+                const markdownFiles = contents.filter(item => 
+                    item.type === 'file' && item.name.endsWith(MARKDOWN_EXTENSION)
+                );
+
+                if (markdownFiles.length === 0) {
+                    fileListContainer.innerHTML = '<p class="error-message">找不到任何 Markdown 檔案 (.md)。</p>';
+                    return;
+                }
+
+                fileListContainer.innerHTML = ''; // 清空載入提示
+                let hashPath = window.location.hash.substring(1); // 取得 Hash (#) 後面的內容
+                let defaultFile = null;
+
+                // 建立檔案連結清單
+                markdownFiles.forEach(file => {
+                    const link = document.createElement('a');
+                    link.textContent = file.name; 
+                    link.href = `#${file.path}`; // 連結的 href 指向 Hash
+                    link.classList.add('file-link');
+                    
+                    // 儲存路徑和 DOM 元素
+                    fileLinksMap.set(file.path, link);
+
+                    // 點擊事件：呼叫渲染函式
+                    link.addEventListener('click', (e) => {
+                        e.preventDefault(); 
+                        renderMarkmap(file.path, link);
+                    });
+
+                    fileListContainer.appendChild(link);
+                    
+                    // 判斷初始載入的檔案：優先使用 Hash，其次是第一個檔案
+                    if (file.path === hashPath) {
+                        defaultFile = { path: file.path, link: link };
+                    } else if (!defaultFile) {
+                        defaultFile = { path: file.path, link: link };
+                    }
+                });
+
+                // 初始載入：渲染第一個檔案或 Hash 指定的檔案
+                if (defaultFile) {
+                    // 初始載入時，如果 Hash 已經在網址列了，則不重複 pushState
+                    renderMarkmap(defaultFile.path, defaultFile.path === hashPath ? null : defaultFile.link);
+                    if (defaultFile.link) defaultFile.link.classList.add('active'); // 確保樣式正確套用
+                }
+
+            } catch (error) {
+                console.error("處理檔案列表錯誤:", error);
+                fileListContainer.innerHTML = `<p class="error-message">載入錯誤: ${error.message}</p>`;
+            }
+        }
+        
+        // ====== 3. 處理瀏覽器返回/前進按鈕 (popstate) ======
+        window.addEventListener('popstate', () => {
+            const hashPath = window.location.hash.substring(1);
+            if (hashPath && fileLinksMap.has(hashPath)) {
+                // 如果 Hash 存在且檔案在列表中，重新渲染並傳遞連結元素以更新樣式
+                renderMarkmap(hashPath, fileLinksMap.get(hashPath));
+            } else if (fileLinksMap.size > 0) {
+                // 如果 Hash 被清除或無效，載入列表中的第一個檔案
+                const firstFile = fileLinksMap.keys().next().value;
+                renderMarkmap(firstFile, fileLinksMap.get(firstFile));
+            }
+        });
+
+
+        // 頁面載入後，開始執行
+        document.addEventListener('DOMContentLoaded', fetchFilesAndSetupList);
+    </script>
+</body>
+</html>
