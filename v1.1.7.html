@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown 筆記瀏覽器 v1.1.7</title>
+    <style>
+        /* v1.1.0: CSS 變數 */
+        :root {
+            --sidebar-width: 320px;
+            --toggle-button-size: 30px;
+            /* v1.1.0: 顏色變數 (淺色模式) */
+            --color-bg: #fff;
+            --color-text: #333;
+            --color-sidebar-bg: #f9f9f9;
+            --color-border: #e0e0e0;
+            --color-link: #1a73e8;
+            --color-link-hover-bg: #e0e7ff;
+            --color-link-active-bg: #1a73e8;
+            --color-link-active-text: #ffffff;
+            --color-shadow: rgba(0, 0, 0, 0.05);
+            --color-header-bg: #fff;
+            --color-resizer-bg: #f1f1f1;
+            --color-resizer-hover-bg: #1a73e8;
+            --color-menu-bg: #ffffff;
+            --color-menu-shadow: rgba(0, 0, 0, 0.1);
+            --color-menu-btn-bg: #f0f0f0;
+            --color-menu-btn-hover-bg: #e0e0e0;
+        }
+
+        /* v1.1.0: 深色模式 */
+        body.dark-mode {
+            --color-bg: #2d333b;
+            --color-text: #cdd9e5;
+            --color-sidebar-bg: #22272e;
+            --color-border: #444c56;
+            --color-link: #58a6ff;
+            --color-link-hover-bg: #388bfd4d;
+            --color-link-active-bg: #58a6ff;
+            --color-link-active-text: #ffffff;
+            --color-shadow: rgba(0, 0, 0, 0.2);
+            --color-header-bg: #2d333b;
+            --color-resizer-bg: #373e47;
+            --color-resizer-hover-bg: #58a6ff;
+            --color-menu-bg: #2d333b; /* 選單背景也變暗 */
+            --color-menu-shadow: rgba(0, 0, 0, 0.3);
+            --color-menu-btn-bg: #444c56;
+            --color-menu-btn-hover-bg: #555c66;
+        }
+
+        /* 基礎樣式和佈局 */
+        body {
+            margin: 0;
+            display: flex; /* v1.1.3: 使用 flex 佈局 */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: var(--color-text);
+            background-color: var(--color-bg);
+            height: 100vh;
+            overflow: hidden; /* 防止 body 滾動 */
+        }
+
+        /* --- 側邊欄樣式 (可滾動) --- */
+        #sidebar {
+            width: var(--sidebar-width); 
+            min-width: 200px; 
+            max-width: 80vw;  
+            height: 100vh;
+            overflow-y: auto;
+            border-right: 1px solid var(--color-border);
+            box-sizing: border-box;
+            background-color: var(--color-sidebar-bg);
+            box-shadow: 2px 0 5px var(--color-shadow);
+            padding: 0;
+            user-select: none;
+            flex-shrink: 0; 
+            z-index: 100;
+            position: relative;
+            /* v1.1.3: 移除 transform */
+        }
+
+        /* v1.1.3: 側邊欄收合時的狀態 (使用 display: none) */
+        body.sidebar-collapsed #sidebar {
+            display: none;
+        }
+
+        /* v1.1.2: 標題已移除 */
+        
+        #file-tree-container {
+            padding: 10px 20px;
+        }
+
+        /* 根節點的 UL 不需要額外縮排 */
+        #file-tree-container > ul {
+             padding-left: 0;
+        }
+
+        /* --- 樹狀檢視 (Tree View) 樣式 --- */
+        .tree-node {
+            list-style-type: none;
+            margin: 2px 0;
+        }
+
+        .tree-node ul {
+            padding-left: 20px;
+            margin: 5px 0 5px 12px;
+            border-left: 1px dashed #ccc;
+        }
+
+        .tree-folder-title {
+            cursor: pointer;
+            padding: 5px 8px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            font-weight: 500;
+            transition: background-color 0.2s ease;
+        }
+
+        .tree-folder-title:hover {
+            background-color: var(--color-link-hover-bg);
+        }
+
+        .tree-folder-title .icon {
+            display: inline-block;
+            width: 16px;
+            text-align: center;
+            margin-right: 5px;
+            transition: transform 0.1s ease-in-out;
+        }
+
+        .tree-node.collapsed > .tree-folder-title .icon {
+            transform: rotate(-90deg);
+        }
+
+        .tree-node.collapsed > ul {
+            display: none;
+        }
+
+        .tree-file {
+            display: block;
+            padding: 5px 8px 5px 30px; 
+            text-decoration: none;
+            color: var(--color-text);
+            border-radius: 6px;
+            transition: all 0.2s ease;
+            font-size: 0.95rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            user-select: text; 
+        }
+
+        .tree-file:hover {
+            background-color: var(--color-link-hover-bg);
+            color: var(--color-link);
+        }
+
+        .tree-file.active {
+            font-weight: bold;
+            background-color: var(--color-link-active-bg);
+            color: var(--color-link-active-text);
+            border-color: var(--color-link-active-bg);
+        }
+
+        /* --- 側邊欄寬度調整器 --- */
+        #resizer {
+            width: 5px;
+            height: 100vh;
+            background: var(--color-resizer-bg);
+            cursor: col-resize;
+            transition: background-color 0.2s ease; /* v1.1.3: 移除 transform 動畫 */
+            flex-shrink: 0;
+            position: relative;
+            z-index: 100;
+        }
+        #resizer:hover,
+        #resizer.resizing {
+            background: var(--color-resizer-hover-bg);
+        }
+        
+        /* v1.1.3: 側邊欄收合時隱藏調整器 (使用 display: none) */
+        body.sidebar-collapsed #resizer {
+            display: none;
+        }
+
+        /* --- Markdown 容器樣式 --- */
+        #markdown-view-container {
+            flex-grow: 1; /* v1.1.3: flex 佈局自動填滿 */
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+            width: 0; /* v1.1.3: 移除 width: 0 */
+            z-index: 1;
+            /* v1.1.3: 移除所有 margin-left 邏輯 */
+        }
+        
+        /* 用於顯示渲染後 HTML 的容器 */
+        #markdown-content {
+            padding: 20px 40px 40px 40px;
+            height: 100vh;
+            overflow-y: auto;
+            box-sizing: border-box;
+            width: 100%;
+            font-size: 16px; 
+        }
+
+        /* --- v1.1.3: 選單按鈕 --- */
+        #menu-toggle {
+            position: absolute;
+            top: 10px;
+            left: 10px; /* v1.1.3: 位置固定在左上角 */
+            z-index: 150; 
+            width: var(--toggle-button-size);
+            height: var(--toggle-button-size);
+            background-color: rgba(255, 255, 255, 0.8);
+            border: 1px solid #ccc;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #333;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            transition: background-color 0.2s ease;
+            /* v1.1.3: 移除 left 動畫 */
+        }
+        #menu-toggle:hover {
+            background-color: #fff;
+        }
+        
+        /* v1.1.3: SVG 圖示樣式 */
+        #menu-toggle svg {
+            width: 20px;
+            height: 20px;
+            stroke: currentColor;
+            stroke-width: 2.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            fill: none;
+        }
+
+        /* v1.1.3: SVG 圖示切換邏輯 */
+        /* 預設: 側邊欄展開, 顯示 X */
+        .icon-menu { display: none; }
+        .icon-close { display: block; }
+        /* 側邊欄收合時: 顯示 ☰ */
+        body.sidebar-collapsed .icon-menu { display: block; }
+        body.sidebar-collapsed .icon-close { display: none; }
+        
+        
+        /* v1.1.0: 深色模式下的按鈕 */
+        body.dark-mode #menu-toggle {
+             background-color: var(--color-menu-btn-bg);
+             border-color: var(--color-border);
+             color: var(--color-text);
+        }
+        body.dark-mode #menu-toggle:hover {
+             background-color: var(--color-menu-btn-hover-bg);
+        }
+
+        /* v1.1.1: 設定選單 (移入側邊欄) */
+        #settings-menu {
+            padding: 10px;
+            width: auto; 
+            border-top: 1px solid var(--color-border); 
+        }
+        
+        .settings-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 10px; 
+        }
+        .settings-item button {
+            padding: 5px 10px;
+            font-size: 1rem;
+            cursor: pointer;
+            background-color: var(--color-menu-btn-bg);
+            color: var(--color-text);
+            border: 1px solid var(--color-border);
+            border-radius: 5px;
+        }
+        .settings-item button:hover {
+            background-color: var(--color-menu-btn-hover-bg);
+        }
+        
+        /* v1.1.4: 美化字體控制器 */
+        #font-size-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px; /* 增加間距 */
+        }
+        #font-slider {
+            flex-grow: 1; /* 滑桿填滿剩餘空間 */
+        }
+        #font-input {
+            width: 50px;
+            padding: 4px;
+            border: 1px solid var(--color-border);
+            background-color: var(--color-bg);
+            color: var(--color-text);
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .settings-divider {
+            height: 1px;
+            background-color: var(--color-border);
+            margin: 8px 0;
+        }
+        #version-info {
+            font-size: 0.8rem;
+            color: #888;
+            text-align: center;
+            padding-top: 5px;
+        }
+        /* 簡易的 Checkbox Toggle */
+        .switch {
+          position: relative;
+          display: inline-block;
+          width: 44px;
+          height: 24px;
+        }
+        .switch input { display: none; }
+        .slider {
+          position: absolute;
+          cursor: pointer;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background-color: #ccc;
+          transition: .4s;
+          border-radius: 24px;
+        }
+        .slider:before {
+          position: absolute;
+          content: "";
+          height: 16px;
+          width: 16px;
+          left: 4px;
+          bottom: 4px;
+          background-color: white;
+          transition: .4s;
+          border-radius: 50%;
+        }
+        input:checked + .slider {
+          background-color: var(--color-link);
+        }
+        input:checked + .slider:before {
+          transform: translateX(20px);
+        }
+
+        /* v1.1.4: 美化捲軸 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--color-sidebar-bg);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        body.dark-mode ::-webkit-scrollbar-track {
+            background: var(--color-sidebar-bg);
+        }
+        body.dark-mode ::-webkit-scrollbar-thumb {
+            background: #555;
+        }
+        body.dark-mode ::-webkit-scrollbar-thumb:hover {
+            background: #777;
+        }
+
+        /* 載入和錯誤提示 */
+        .status-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.5rem;
+            color: #777;
+            padding: 20px;
+            background-color: rgba(255, 255, 255, 0.8);
+            border-radius: 8px;
+            z-index: 20; /* 確保在 markdown 內容之上 */
+            /* v1.1.4: 讓連結可以點擊 */
+            pointer-events: all;
+            text-align: center; /* 讓錯誤訊息居中 */
+        }
+        body.dark-mode .status-message {
+            color: #aaa;
+            background-color: rgba(60, 60, 60, 0.8);
+        }
+        .status-message.error {
+            color: #D32F2F; /* 紅色 */
+        }
+        .status-message a {
+            font-weight: 500;
+        }
+        
+        .sidebar-status {
+            padding: 20px;
+            font-size: 1rem;
+            color: #777;
+        }
+        .sidebar-status.error {
+             color: #D32F2F;
+        }
+
+    </style>
+    
+    <!-- v1.1.0: 引入 GitHub Markdown 樣式 (淺色) -->
+    <link id="light-theme" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.1.0/github-markdown-light.min.css">
+    <!-- v1.1.0: 引入 GitHub Markdown 樣式 (深色, 預設禁用) -->
+    <link id="dark-theme" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.1.0/github-markdown-dark.min.css" disabled>
+    
+    <!-- v1.1.0: 引入 KaTeX (LaTeX 渲染) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
+
+
+</head>
+<body class=""> <!-- v1.1.3: 預設展開側邊欄 -->
+    <div id="sidebar">
+        <!-- v1.1.2: 移除標題 -->
+        <div id="file-tree-container">
+            <!-- 檔案樹將在這裡動態生成 -->
+            <div class="sidebar-status" id="sidebar-status">正在載入...</div>
+        </div>
+        
+        <!-- v1.1.1: 將設定選單移至側邊欄底部 -->
+        <div id="settings-menu">
+            <div class="settings-divider"></div>
+            <div class="settings-item">
+                <span>深色模式</span>
+                <label class="switch">
+                    <input type="checkbox" id="dark-mode-toggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="settings-item">
+                <span>字體大小</span>
+                <!-- v1.1.4: 更新為滑桿和輸入框 -->
+                <div id="font-size-controls">
+                    <input type="range" id="font-slider" min="10" max="32" step="1">
+                    <input type="number" id="font-input" min="10" max="32">
+                </div>
+            </div>
+            <div class="settings-divider"></div>
+            <div id="version-info">
+                版本: v1.1.7
+            </div>
+        </div>
+    </div>
+    
+    <div id="resizer"></div>
+
+    <div id="markdown-view-container">
+        <!-- v1.1.3: 按鈕 HTML 結構更新 (使用 SVG) -->
+        <button id="menu-toggle" title="收合選單">
+            <!-- ☰ Menu Icon -->
+            <svg class="icon-menu" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+            <!-- ✕ Close Icon -->
+            <svg class="icon-close" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+        </button>
+
+        <!-- v1.1.1: 移除舊的設定選單 -->
+        
+        <!-- 將 svg 替換為 div 容器 -->
+        <div id="markdown-content" class="markdown-body"></div>
+        
+        <div id="content-status" class="status-message">請從左側選擇一個筆記檔案</div>
+    </div>
+    
+    <!-- v1.1.0: 引入 marked.js 用於渲染 Markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
+    
+    <!-- v1.1.1: 引入 KaTeX JS 和 auto-render 擴充 (修復 LaTeX) -->
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js"></script>
+
+
+    <script>
+        // =================================================================
+        //                 🔔 GitHub 資訊 (請修改這裡) 🔔
+        // =================================================================
+        const GITHUB_USERNAME = 'klhrd';      
+        const REPO_NAME = 'class_note';       
+        const BRANCH_NAME = 'main'; // 或是 'master'
+        // v1.1.6: 檔案排除列表
+        const EXCLUDE_FILES = ['README.md']; 
+        // =================================================================
+        
+        const MARKDOWN_EXTENSION = '.md';
+        
+        const fileLinksMap = new Map();
+        let activeLink = null;
+        let currentMarkdownPath = null; // v1.1.0: 追蹤目前路徑以修復圖片
+        let currentFontSize = 16; // v1.1.0: 預設字體大小
+
+        // v1.1.0: marked.js 渲染器 (用於修復圖片路徑)
+        const renderer = new marked.Renderer();
+        const originalImageRenderer = renderer.image;
+        renderer.image = (href, title, text) => {
+            // 檢查是否為相對路徑 (不是 http://, https://, 或 data:)
+            if (href && !href.startsWith('http') && !href.startsWith('data:')) {
+                let basePath = '';
+                if (currentMarkdownPath) {
+                    // 取得檔案所在目錄
+                    const pathParts = currentMarkdownPath.split('/');
+                    pathParts.pop(); // 移除檔名
+                    basePath = pathParts.join('/');
+                }
+                // 組合出 GitHub Raw 的完整 URL
+                const newHref = `https://raw.githubusercontent.com/${GITHUB_USERNAME}/${REPO_NAME}/${BRANCH_NAME}/${basePath ? basePath + '/' : ''}${href}`;
+                return originalImageRenderer.call(renderer, newHref, title, text);
+            }
+            return originalImageRenderer.call(renderer, href, title, text);
+        };
+        
+        // v1.1.0: 設定 marked 使用自訂渲染器
+        marked.use({ renderer });
+
+
+        // ====== 1. Markdown 渲染核心函式 (v1.1.5 修改 - History 處理) ======
+        /**
+         * 渲染 Markdown 內容並更新側邊欄狀態。
+         * @param {string} filePath - 檔案路徑。
+         * @param {HTMLElement} sourceLink - 觸發點擊的檔案連結元素。
+         * @param {boolean} [isInitialLoad=false] - 是否為應用程式啟動時的初始載入。
+         */
+        async function renderMarkdown(filePath, sourceLink, isInitialLoad = false) {
+            const contentStatus = document.getElementById('content-status');
+            const contentEl = document.getElementById('markdown-content');
+            
+            currentMarkdownPath = filePath; // v1.1.0: 儲存目前路徑
+            
+            contentEl.innerHTML = ''; 
+            contentStatus.textContent = `正在載入 ${filePath} 的內容...`;
+            contentStatus.className = 'status-message'; 
+            contentStatus.style.display = 'block';
+            contentEl.scrollTop = 0; // v1.1.0: 點擊新檔案時滾動到頂部
+
+            try {
+                if (typeof marked === 'undefined') {
+                    throw new Error("Marked.js 函式庫尚未載入完成。");
+                }
+
+                const rawFileUrl = `https://raw.githubusercontent.com/${GITHUB_USERNAME}/${REPO_NAME}/${BRANCH_NAME}/${filePath}`;
+                
+                const response = await fetch(rawFileUrl);
+                if (!response.ok) {
+                    throw new Error(`無法載入檔案 (HTTP ${response.status})`);
+                }
+                const markdownContent = await response.text();
+                                
+                if (!markdownContent.trim()) {
+                    contentEl.innerHTML = '<em>這個檔案沒有內容。</em>';
+                } else {
+                    // v1.1.1: 先用 marked 渲染
+                    contentEl.innerHTML = marked.parse(markdownContent);
+                }
+
+                // v1.1.1: 接著呼叫 KaTeX auto-render
+                if (window.renderMathInElement) {
+                    window.renderMathInElement(contentEl, {
+                        delimiters: [
+                            {left: '$$', right: '$$', display: true},
+                            {left: '$', right: '$', display: false},
+                            {left: '\\(', right: '\\)', display: false},
+                            {left: '\\[', right: '\\]', display: true}
+                        ],
+                        throwOnError: false
+                    });
+                }
+                
+                contentStatus.style.display = 'none';
+                
+                if (sourceLink) {
+                    if (activeLink) {
+                        activeLink.classList.remove('active');
+                    }
+                    sourceLink.classList.add('active');
+                    activeLink = sourceLink;
+                    
+                    // v1.1.5: 只有在「使用者點擊」或「非初始載入」時才更新 history
+                    // 確保 F5 重新整理時，URL hash 不會被 pushState 覆蓋
+                    if (!isInitialLoad) {
+                        history.pushState({ path: filePath }, null, `#${filePath}`);
+                    }
+                }
+
+            } catch (error) {
+                console.error("Markdown 渲染錯誤:", error);
+                // v1.1.4: 顯示 GitHub 連結
+                const githubFileUrl = `https://github.com/${GITHUB_USERNAME}/${REPO_NAME}/blob/${BRANCH_NAME}/${filePath}`;
+                contentStatus.innerHTML = `❌ 渲染錯誤: ${error.message}.<br>
+                    <a href="${githubFileUrl}" target="_blank" style="color: var(--color-link); font-size: 1rem;">在 GitHub 上查看檔案</a>`;
+                contentStatus.className = 'status-message error';
+                contentStatus.style.display = 'block';
+            }
+        }
+
+        // ====== 2. 檔案樹資料處理 (v1.1.6 修改 - 排除檔案) ======
+        async function fetchFileTree() {
+            const apiUrl = `https://api.github.com/repos/${GITHUB_USERNAME}/${REPO_NAME}/git/trees/${BRANCH_NAME}?recursive=1`;
+            const response = await fetch(apiUrl);
+            if (!response.ok) {
+                throw new Error(`無法從 GitHub API 取得檔案樹 (HTTP ${response.status})`);
+            }
+            const data = await response.json();
+            if (data.truncated) {
+                console.warn("GitHub API 回應被截斷，檔案列表可能不完整。");
+            }
+            return data.tree
+                .filter(item => 
+                    item.type === 'blob' && 
+                    item.path.endsWith(MARKDOWN_EXTENSION) &&
+                    !EXCLUDE_FILES.includes(item.path) // v1.1.6: 排除特定檔案
+                )
+                .map(item => item.path);
+        }
+
+        function buildTree(paths) {
+            const root = { name: 'root', type: 'tree', children: [] };
+            paths.forEach(path => {
+                const parts = path.split('/');
+                let currentNode = root;
+                parts.forEach((part, index) => {
+                    let childNode = currentNode.children.find(n => n.name === part);
+                    const isFile = index === parts.length - 1;
+                    if (!childNode) {
+                        if (isFile) {
+                            childNode = { name: part, type: 'blob', path: path };
+                            currentNode.children.push(childNode);
+                        } else {
+                            childNode = {
+                                name: part, type: 'tree',
+                                path: parts.slice(0, index + 1).join('/'),
+                                children: []
+                            };
+                            currentNode.children.push(childNode);
+                        }
+                    }
+                    currentNode = childNode;
+                });
+            });
+            const sortNodes = (nodes) => {
+                nodes.sort((a, b) => {
+                    if (a.type !== b.type) return a.type === 'tree' ? -1 : 1; 
+                    return a.name.localeCompare(b.name, 'zh-TW'); 
+                });
+                nodes.forEach(node => {
+                    if (node.type === 'tree') sortNodes(node.children);
+                });
+            };
+            sortNodes(root.children);
+            return root;
+        }
+
+        // ====== 3. 渲染側邊欄 (Tree View) (v1.1.5 修改 - findAndSelectFile 參數) ======
+        function createTreeViewNode(node) {
+            const li = document.createElement('li');
+            li.className = 'tree-node';
+            if (node.type === 'tree') {
+                li.classList.add('collapsed'); 
+                const title = document.createElement('div');
+                title.className = 'tree-folder-title';
+                title.innerHTML = `<span class="icon">▶</span> <span>${node.name}</span>`;
+                title.addEventListener('click', (e) => {
+                    e.stopPropagation(); 
+                    li.classList.toggle('collapsed');
+                });
+                li.appendChild(title);
+                const childrenUl = document.createElement('ul');
+                node.children.forEach(child => {
+                    childrenUl.appendChild(createTreeViewNode(child));
+                });
+                li.appendChild(childrenUl);
+            } else if (node.type === 'blob') {
+                li.classList.add('tree-file-node');
+                const link = document.createElement('a');
+                link.className = 'tree-file';
+                link.href = `#${node.path}`;
+                link.textContent = node.name; 
+                link.dataset.path = node.path; 
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    // v1.1.5: 使用者點擊，isInitialLoad=false (預設)
+                    renderMarkdown(node.path, link, false); 
+                    // v1.1.4: 移除自動關閉側邊欄
+                    // document.body.classList.add('sidebar-collapsed'); 
+                });
+                li.appendChild(link);
+                fileLinksMap.set(node.path, link); 
+            }
+            return li;
+        }
+
+        /**
+         * 尋找並選取檔案，同時展開檔案樹。
+         * @param {string} path - 檔案路徑。
+         * @param {boolean} [isInitialLoad=false] - 是否為初始載入。
+         */
+        function findAndSelectFile(path, isInitialLoad = false) { // v1.1.5: 新增 isInitialLoad 參數
+            const link = fileLinksMap.get(path);
+            if (!link) return false;
+            
+            // v1.1.5: 傳入 isInitialLoad
+            renderMarkdown(path, link, isInitialLoad); 
+            
+            let currentNode = link.parentElement; 
+            while (currentNode && currentNode.id !== 'file-tree-container') {
+                if (currentNode.tagName === 'LI' && currentNode.classList.contains('tree-node')) {
+                    currentNode.classList.remove('collapsed'); 
+                }
+                currentNode = currentNode.parentElement;
+            }
+            // v1.1.3: 自動展開側邊欄以顯示檔案
+            document.body.classList.remove('sidebar-collapsed');
+            // v1.1.3: 移除 textContent 變更 (由 CSS 處理)
+            link.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return true;
+        }
+
+        // ====== 4. 初始化應用程式 (v1.1.7 修改 - 處理無效 Hash) ======
+        async function initializeApp() {
+            const container = document.getElementById('file-tree-container');
+            const statusEl = document.getElementById('sidebar-status');
+            try {
+                const paths = await fetchFileTree();
+                if (paths.length === 0) {
+                    throw new Error("儲存庫中找不到任何 .md 檔案。");
+                }
+                const tree = buildTree(paths);
+                statusEl.remove();
+                const rootUl = document.createElement('ul');
+                const repoNode = { name: REPO_NAME, type: 'tree', children: tree.children };
+                const repoLi = createTreeViewNode(repoNode);
+                repoLi.classList.remove('collapsed');
+                rootUl.appendChild(repoLi);
+                container.appendChild(rootUl);
+
+                // v1.1.6: 修正 - 必須解碼 URL hash
+                const hashPath = decodeURIComponent(window.location.hash.substring(1));
+                let loaded = false;
+
+                if (hashPath) {
+                    loaded = findAndSelectFile(hashPath, true); // 初始載入 = true
+                    
+                    // v1.1.7: 檢查 hashPath 是否有效
+                    if (!loaded) {
+                        // 檔案不存在，顯示錯誤訊息
+                        const contentStatus = document.getElementById('content-status');
+                        contentStatus.innerHTML = `❌ 檔案不存在: ${hashPath}<br>
+                            <span style="font-size: 1rem;">請從左側選單選擇一個有效的檔案。</span>`;
+                        contentStatus.className = 'status-message error';
+                        contentStatus.style.display = 'block';
+                        // 保持側邊欄展開
+                        document.body.classList.remove('sidebar-collapsed');
+                    }
+                } else {
+                    // v1.1.7: 如果沒有 hash, 載入第一個檔案
+                    if (fileLinksMap.size > 0) {
+                        const firstFile = fileLinksMap.keys().next().value;
+                        loaded = findAndSelectFile(firstFile, true); // 初始載入 = true
+                    }
+                }
+                
+                // v1.1.7: 確保在成功載入時側邊欄是展開的
+                // (如果 hash 無效, loaded 會是 false, 側邊欄會保持展開)
+                if (loaded) {
+                     document.body.classList.remove('sidebar-collapsed');
+                }
+
+            } catch (error) {
+                console.error("初始化應用程式錯誤:", error);
+                statusEl.textContent = `❌ 載入錯誤: ${error.message}`;
+                statusEl.className = 'sidebar-status error';
+            }
+        }
+        
+        // ====== 5. 處理瀏覽器返回/前進按鈕 (v1.1.6 修改 - 解碼) ======
+        window.addEventListener('popstate', (event) => {
+            let path;
+            if (event.state && event.state.path) {
+                path = event.state.path;
+            } else {
+                // v1.1.6: 必須解碼 URL
+                path = decodeURIComponent(window.location.hash.substring(1));
+            }
+            // v1.1.5: 瀏覽器導航動作，視為非初始載入 (會再次呼叫 pushState 但沒關係)
+            if (path) findAndSelectFile(path, false); 
+        });
+
+        // ====== 6. 處理側邊欄寬度調整 (v1.1.3 修改) ======
+        function setupResizer() {
+            const resizer = document.getElementById('resizer');
+            if (!resizer) return;
+            const sidebar = document.getElementById('sidebar');
+            const container = document.querySelector('body');
+            let isResizing = false;
+            const resize = (e) => {
+                if (!isResizing) return;
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                let newWidth = clientX; // v1.1.3: 簡化邏輯
+                const minWidth = parseInt(getComputedStyle(sidebar).minWidth, 10);
+                const maxWidth = parseInt(getComputedStyle(sidebar).maxWidth, 10);
+                if (newWidth < minWidth) newWidth = minWidth;
+                if (newWidth > maxWidth) newWidth = maxWidth;
+                document.documentElement.style.setProperty('--sidebar-width', `${newWidth}px`);
+                
+                // v1.1.3: 移除按鈕位置更新
+            };
+            const stopResize = () => {
+                isResizing = false;
+                resizer.classList.remove('resizing');
+                window.removeEventListener('pointermove', resize);
+                window.removeEventListener('pointerup', stopResize);
+            };
+            resizer.addEventListener('pointerdown', (e) => {
+                isResizing = true;
+                resizer.classList.add('resizing');
+                e.preventDefault(); 
+                window.addEventListener('pointermove', resize);
+                window.addEventListener('pointerup', stopResize);
+            });
+        }
+        // ====== 7. (v1.1.4) 處理設定選單 ======
+        function setupSettingsMenu() {
+            const menuToggle = document.getElementById('menu-toggle');
+            const darkModeToggle = document.getElementById('dark-mode-toggle');
+            // v1.1.4: 更新控制器
+            const fontSlider = document.getElementById('font-slider');
+            const fontInput = document.getElementById('font-input');
+            const contentEl = document.getElementById('markdown-content');
+            
+            if (!menuToggle || !darkModeToggle || !fontSlider || !fontInput || !contentEl) {
+                console.error("設定選單的某些元件找不到。");
+                return;
+            }
+
+            // 點擊選單按鈕 (☰ / ✕)
+            menuToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                document.body.classList.toggle('sidebar-collapsed');
+                // v1.1.3: 移除 textContent 變更 (由 CSS 處理)
+            });
+
+
+            // 點擊「深色模式」
+            darkModeToggle.addEventListener('change', () => {
+                const isDarkMode = darkModeToggle.checked;
+                setDarkMode(isDarkMode);
+                localStorage.setItem('darkMode', isDarkMode);
+            });
+
+            // v1.1.4: 監聽滑桿
+            fontSlider.addEventListener('input', () => {
+                updateFontSize(parseInt(fontSlider.value, 10));
+            });
+            // v1.1.4: 監聽數字輸入
+            fontInput.addEventListener('input', () => {
+                // v1.1.7: 修正輸入框邏輯，防止在輸入中時被清空
+                const val = parseInt(fontInput.value, 10);
+                if (!isNaN(val)) {
+                    updateFontSize(val);
+                }
+            });
+            // v1.1.7: 增加 change 事件，處理輸入完成後 (例如按 Enter)
+            fontInput.addEventListener('change', () => {
+                 updateFontSize(parseInt(fontInput.value, 10));
+            });
+
+
+            function updateFontSize(newSize) {
+                // 確保字體大小在範圍內
+                // v1.1.7: 修正 - 檢查 newSize 是否為 NaN
+                if (newSize && !isNaN(newSize)) {
+                    currentFontSize = Math.max(10, Math.min(32, newSize));
+                }
+                
+                contentEl.style.fontSize = `${currentFontSize}px`;
+                fontSlider.value = currentFontSize;
+                fontInput.value = currentFontSize;
+                
+                localStorage.setItem('fontSize', currentFontSize);
+            }
+
+            function setDarkMode(isDark) {
+                const lightTheme = document.getElementById('light-theme');
+                const darkTheme = document.getElementById('dark-theme');
+                if (isDark) {
+                    document.body.classList.add('dark-mode');
+                    lightTheme.disabled = true;
+                    darkTheme.disabled = false;
+                } else {
+                    document.body.classList.remove('dark-mode');
+                    lightTheme.disabled = false;
+                    darkTheme.disabled = true;
+                }
+                darkModeToggle.checked = isDark;
+            }
+
+            // 載入儲存的設定
+            const savedDarkMode = localStorage.getItem('darkMode') === 'true';
+            setDarkMode(savedDarkMode);
+            
+            const savedFontSize = parseInt(localStorage.getItem('fontSize'), 10);
+            if (!isNaN(savedFontSize)) {
+                currentFontSize = savedFontSize;
+                updateFontSize(); // v1.1.4: 呼叫 updateFontSize 來同步所有
+            } else {
+                updateFontSize(); // v1.1.4: 確保初始值被設定
+            }
+        }
+
+
+        // 'load' 事件會等待所有外部資源 (包含 marked.js 和 KaTeX) 都載入完成
+        window.addEventListener('load', () => {
+            initializeApp();
+            setupResizer(); 
+            setupSettingsMenu(); // <-- v1.1.1: 設定選單
+        });
+    </script>
+</body>
+</html>
