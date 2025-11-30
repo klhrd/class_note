@@ -1,6 +1,8 @@
 # class_note
 my class note  
-**不允許外傳**
+[VIEWER](https://klhrd.github.io/class_note/v1.1.7)  
+**這底下只是有用MarkMap的版本**  
+其他懶得弄了
 
 ## 地理
 - 9th
