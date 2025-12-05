@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Markdown 筆記/心智圖檢視器 v2.1.0</title>
+    
+    <!-- D3.js (心智圖) -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    
+    <style>
+        /* =========================================
+           CSS 變數系統
+           ========================================= */
+        :root {
+            --sidebar-width: 320px;
+            --header-height: 50px;
+            
+            /* 淺色模式 (Light) */
+            --bg-color: #ffffff;
+            --text-color: #333333;
+            --sidebar-bg: #f5f5f5;
+            --border-color: #e0e0e0;
+            --accent-color: #1a73e8; /* 主色調 */
+            --accent-hover: #1557b0;
+            --toolbar-bg: rgba(255, 255, 255, 0.95);
+            --toolbar-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            
+            /* 心智圖配色 */
+            --mm-line: #ccc;
+            --mm-node-bg: #fff;
+            --mm-node-stroke: #1a73e8;
+            --mm-text: #333;
+            
+            /* 程式碼區塊 */
+            --code-bg: #f6f8fa;
+        }
+
+        /* 深色模式 (Dark) */
+        body.dark-mode {
+            --bg-color: #1e1e1e;
+            --text-color: #d4d4d4;
+            --sidebar-bg: #252526;
+            --border-color: #3e3e42;
+            --accent-color: #4daafc;
+            --accent-hover: #2a82d6;
+            --toolbar-bg: rgba(37, 37, 38, 0.95);
+            --toolbar-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            
+            --mm-line: #555;
+            --mm-node-bg: #1e1e1e;
+            --mm-node-stroke: #4daafc;
+            --mm-text: #d4d4d4;
+            
+            --code-bg: #1e1e1e;
+        }
+
+        /* =========================================
+           全域佈局
+           ========================================= */
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden; /* 禁止整個頁面滾動，由容器處理 */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* --- 側邊欄 (Sidebar) --- */
+        #sidebar {
+            width: var(--sidebar-width);
+            min-width: 200px;
+            height: 100%;
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.3s ease;
+            z-index: 100;
+            flex-shrink: 0;
+        }
+        
+        body.sidebar-closed #sidebar {
+            margin-left: calc(var(--sidebar-width) * -1); /* 使用負 margin 隱藏 */
+        }
+
+        /* 檔案樹容器 */
+        #file-tree-container {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+        
+        /* 側邊欄底部選單 (只留深色模式開關) */
+        #sidebar-footer {
+            padding: 15px;
+            border-top: 1px solid var(--border-color);
+            background-color: var(--sidebar-bg);
+        }
+
+        /* --- 主內容區 (Main Content) --- */
+        #main-container {
+            flex-grow: 1;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+            width: 0; /* 關鍵：讓 flex item 正確縮放 */
+        }
+
+        /* 頂部導航列 */
+        #header-bar {
+            height: var(--header-height);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            gap: 15px;
+            background-color: var(--bg-color);
+            flex-shrink: 0;
+            z-index: 50;
+        }
+
+        /* 按鈕樣式 */
+        .icon-btn {
+            background: none;
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            border-radius: 6px;
+            padding: 6px 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 14px;
+            transition: all 0.2s;
+            user-select: none;
+        }
+        .icon-btn:hover { background-color: rgba(128,128,128, 0.1); }
+        .icon-btn:active { transform: scale(0.96); }
+
+        /* 視圖容器 (包含 Markdown, Mindmap, Raw) */
+        .view-panel {
+            flex-grow: 1;
+            overflow: auto; /* 允許內容滾動 */
+            display: none; /* 預設隱藏 */
+            padding: 20px 40px 100px 40px; /* 底部留白給工具列 */
+            box-sizing: border-box;
+            position: relative;
+        }
+        .view-panel.active { display: block; }
+
+        /* 1. Markdown 渲染區 */
+        #view-markdown {
+            line-height: 1.6;
+        }
+        
+        /* 2. 心智圖區 (SVG) */
+        #view-mindmap {
+            padding: 0; /* SVG 佔滿 */
+            overflow: hidden; /* D3 負責縮放，不需滾動條 */
+            background-color: var(--bg-color);
+            cursor: grab;
+            touch-action: none; /* 關鍵：防止手機上滑動地圖時觸發瀏覽器滾動 */
+        }
+        #view-mindmap:active { cursor: grabbing; }
+
+        /* 3. 原始碼區 */
+        #view-raw {
+            font-family: 'Consolas', 'Monaco', monospace;
+            white-space: pre-wrap; /* 自動換行 */
+            background-color: var(--code-bg);
+            color: var(--text-color);
+        }
+
+        /* =========================================
+           右下角懸浮工具列 (Unified Toolbar)
+           ========================================= */
+        #floating-toolbar {
+            position: absolute;
+            bottom: 25px;
+            right: 25px;
+            background-color: var(--toolbar-bg);
+            padding: 8px;
+            border-radius: 12px;
+            box-shadow: var(--toolbar-shadow);
+            display: flex;
+            gap: 8px;
+            z-index: 200;
+            backdrop-filter: blur(5px);
+            border: 1px solid var(--border-color);
+            transition: opacity 0.3s;
+        }
+        
+        .tool-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--text-color);
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .tool-btn:hover {
+            background-color: rgba(128, 128, 128, 0.1);
+            border-color: var(--border-color);
+        }
+        
+        /* 狀態指示標籤 */
+        .mode-tag {
+            font-size: 12px;
+            padding: 0 8px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            color: var(--accent-color);
+            font-weight: bold;
+            border-right: 1px solid var(--border-color);
+            margin-right: 4px;
+        }
+
+        /* =========================================
+           心智圖 SVG 元素樣式
+           ========================================= */
+        .node circle {
+            fill: var(--mm-node-bg);
+            stroke: var(--mm-node-stroke);
+            stroke-width: 2px;
+            transition: all 0.3s;
+        }
+        .node text {
+            font-family: sans-serif;
+            font-size: 14px;
+            fill: var(--mm-text);
+            text-shadow: 2px 2px 4px var(--bg-color);
+        }
+        .link {
+            fill: none;
+            stroke: var(--mm-line);
+            stroke-width: 1.5px;
+        }
+        /* 懸停效果 */
+        .node:hover circle { stroke-width: 4px; cursor: pointer; }
+        
+        /* =========================================
+           樹狀選單樣式 (Sidebar Tree)
+           ========================================= */
+        ul { list-style: none; padding-left: 20px; margin: 0; }
+        #file-tree-container > ul { padding-left: 0; }
+        .tree-node { margin: 2px 0; }
+        .folder-title, .file-link {
+            padding: 6px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: block;
+            text-decoration: none;
+            color: var(--text-color);
+            font-size: 14px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .folder-title:hover, .file-link:hover { background-color: rgba(128,128,128,0.1); }
+        .file-link.active {
+            background-color: var(--accent-color);
+            color: #fff;
+        }
+        .collapsed > ul { display: none; }
+        .arrow { display: inline-block; width: 16px; transition: transform 0.2s; }
+        .collapsed > .folder-title .arrow { transform: rotate(-90deg); }
+
+        /* 切換開關 (Switch) */
+        .switch { position: relative; display: inline-block; width: 40px; height: 22px; }
+        .switch input { display: none; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 22px; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--accent-color); }
+        input:checked + .slider:before { transform: translateX(18px); }
+
+        /* 載入/錯誤提示 */
+        #status-overlay {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--toolbar-bg);
+            padding: 20px; border-radius: 8px;
+            box-shadow: var(--toolbar-shadow);
+            text-align: center;
+            display: none;
+            z-index: 1000;
+        }
+
+        /* GitHub Markdown CSS 微調 */
+        .markdown-body {
+            background-color: transparent !important;
+            color: var(--text-color) !important;
+        }
+    </style>
+    
+    <!-- Markdown CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.1.0/github-markdown-light.min.css" id="light-css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.1.0/github-markdown-dark.min.css" id="dark-css" disabled>
+</head>
+<body>
+
+    <!-- 側邊欄 -->
+    <div id="sidebar">
+        <div id="file-tree-container">
+            <div style="padding:20px; color:#888;">正在載入檔案列表...</div>
+        </div>
+        
+        <div id="sidebar-footer">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:14px;">深色模式</span>
+                <label class="switch">
+                    <input type="checkbox" id="dark-mode-toggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div style="font-size:12px; color:#888; margin-top:10px; text-align:center;">
+                v2.1.0 Auto-Optimized
+            </div>
+        </div>
+    </div>
+
+    <!-- 主內容區 -->
+    <div id="main-container">
+        
+        <!-- 頂部 Header -->
+        <div id="header-bar">
+            <!-- 1. 側邊欄開關 -->
+            <button class="icon-btn" id="sidebar-toggle" title="切換側邊欄">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+            </button>
+            
+            <!-- 2. 三模式循環切換按鈕 -->
+            <button class="icon-btn" id="mode-cycle-btn" title="切換檢視模式">
+                <span id="mode-icon">📄</span>
+                <span id="mode-text">預覽模式</span>
+            </button>
+        </div>
+
+        <!-- 視圖 1: Markdown 渲染 -->
+        <div id="view-markdown" class="view-panel active markdown-body"></div>
+        
+        <!-- 視圖 2: 心智圖 -->
+        <div id="view-mindmap" class="view-panel"></div>
+        
+        <!-- 視圖 3: 原始碼 -->
+        <pre id="view-raw" class="view-panel"></pre>
+
+        <!-- 狀態提示 -->
+        <div id="status-overlay"></div>
+
+        <!-- 全域懸浮工具列 (右下角) -->
+        <div id="floating-toolbar">
+            <div class="mode-tag" id="toolbar-label">預覽</div>
+            <button class="tool-btn" id="btn-zoom-out" title="縮小/字體變小">－</button>
+            <button class="tool-btn" id="btn-zoom-in" title="放大/字體變大">＋</button>
+            <button class="tool-btn" id="btn-reset" title="重置視圖">⛶</button>
+        </div>
+
+    </div>
+
+    <!-- 函式庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
+    <!-- KaTeX -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js"></script>
+
+    <script>
+        // =========================================
+        // 設定區域 (請依需求修改)
+        // =========================================
+        const GITHUB_USERNAME = 'klhrd';      
+        const REPO_NAME = 'class_note';       
+        const BRANCH_NAME = 'main';
+        const EXCLUDE_FILES = ['README.md'];
+        
+        // =========================================
+        // 狀態管理
+        // =========================================
+        const APP = {
+            currentMode: 0, // 0: Markdown, 1: Mindmap, 2: Raw
+            modes: [
+                { id: 'view-markdown', name: '預覽', icon: '📄' },
+                { id: 'view-mindmap', name: '心智圖', icon: '🧠' },
+                { id: 'view-raw', name: '原始碼', icon: '📝' }
+            ],
+            currentFile: null,
+            markdownText: '',
+            fontSize: 16,
+            zoom: null,      // D3 zoom object
+            svg: null,       // D3 svg selection
+            g: null,         // D3 g selection
+            mindmapScale: 1
+        };
+
+        // =========================================
+        // 1. 初始化與事件監聽
+        // =========================================
+        window.addEventListener('load', () => {
+            initSidebar();
+            initToolbar();
+            initSettings();
+            fetchFileTree();
+            
+            // 處理 URL Hash
+            const hash = decodeURIComponent(window.location.hash.substring(1));
+            if(hash) loadFile(hash);
+        });
+
+        // 模式切換 (循環)
+        document.getElementById('mode-cycle-btn').addEventListener('click', cycleMode);
+
+        function cycleMode() {
+            APP.currentMode = (APP.currentMode + 1) % 3;
+            updateViewMode();
+        }
+
+        function updateViewMode() {
+            // 隱藏所有視圖
+            document.querySelectorAll('.view-panel').forEach(el => el.classList.remove('active'));
+            
+            // 顯示當前視圖
+            const mode = APP.modes[APP.currentMode];
+            document.getElementById(mode.id).classList.add('active');
+            
+            // 更新按鈕文字
+            document.getElementById('mode-icon').textContent = mode.icon;
+            document.getElementById('mode-text').textContent = mode.name + '模式';
+            
+            // 更新工具列標籤
+            document.getElementById('toolbar-label').textContent = mode.name;
+
+            // 如果切換到心智圖，重新適應視窗
+            if (APP.currentMode === 1 && APP.markdownText) {
+                // 小延遲確保 DOM 渲染完成
+                setTimeout(() => {
+                    if(!document.querySelector('#view-mindmap svg')) {
+                        renderMindMap(APP.markdownText);
+                    } else {
+                        fitMindMap();
+                    }
+                }, 50);
+            }
+        }
+
+        // =========================================
+        // 2. 檔案載入系統
+        // =========================================
+        async function loadFile(path) {
+            showStatus(`正在載入 ${path}...`);
+            APP.currentFile = path;
+            
+            // 更新側邊欄選中狀態
+            document.querySelectorAll('.file-link').forEach(el => el.classList.remove('active'));
+            const activeLink = document.querySelector(`.file-link[data-path="${path}"]`);
+            if(activeLink) {
+                activeLink.classList.add('active');
+                // 自動展開父資料夾
+                let parent = activeLink.parentElement.parentElement; // ul
+                while(parent && parent.id !== 'file-tree-container') {
+                    if(parent.parentElement.classList.contains('tree-node')) {
+                        parent.parentElement.classList.remove('collapsed');
+                    }
+                    parent = parent.parentElement;
+                }
+            }
+
+            try {
+                const url = `https://raw.githubusercontent.com/${GITHUB_USERNAME}/${REPO_NAME}/${BRANCH_NAME}/${path}`;
+                const res = await fetch(url);
+                if(!res.ok) throw new Error('HTTP ' + res.status);
+                
+                const text = await res.text();
+                APP.markdownText = text;
+
+                // 1. 渲染 Markdown
+                document.getElementById('view-markdown').innerHTML = marked.parse(text);
+                renderMath(document.getElementById('view-markdown'));
+                
+                // 2. 渲染 Raw Code
+                document.getElementById('view-raw').textContent = text;
+                
+                // 3. 渲染 Mindmap (即使當前不是心智圖模式也預先準備，或等到切換時再渲染)
+                // 為了效能，這裡我們清空舊的，等使用者切換過去或如果當前是心智圖才渲染
+                document.getElementById('view-mindmap').innerHTML = '';
+                if(APP.currentMode === 1) renderMindMap(text);
+
+                hideStatus();
+                history.replaceState(null, null, '#' + path);
+
+                // 更新字體大小應用
+                applyFontSize();
+
+            } catch (err) {
+                showStatus('載入失敗: ' + err.message, true);
+            }
+        }
+
+        // =========================================
+        // 3. 心智圖引擎 (D3.js) - v2.1.0 升級版
+        // =========================================
+        function renderMindMap(markdown) {
+            const container = document.getElementById('view-mindmap');
+            container.innerHTML = '';
+            
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            // --- 步驟 A: 解析 Markdown (含內文) ---
+            const data = parseMarkdownImproved(markdown);
+            
+            // --- 步驟 B: 設定 D3 ---
+            const root = d3.hierarchy(data);
+            
+            // v2.1.0: 加大間距 (NodeSize) 避免文字重疊
+            // [垂直間距, 水平間距] -> 垂直改為 50 (原40)，水平改為 280 (原200)
+            const treeLayout = d3.tree().nodeSize([60, 300]); 
+            
+            // 初始化折疊 (Level 2 以上折疊)
+            root.descendants().forEach((d) => {
+                if (d.depth > 1) d._children = d.children;
+            });
+
+            const svg = d3.select("#view-mindmap").append("svg")
+                .attr("width", "100%")
+                .attr("height", "100%")
+                .style("touch-action", "none"); // 禁止瀏覽器預設觸控行為
+
+            const g = svg.append("g");
+            APP.g = g;
+            APP.svg = svg;
+
+            // Zoom 行為
+            const zoom = d3.zoom()
+                .scaleExtent([0.1, 3])
+                .on("zoom", (e) => g.attr("transform", e.transform));
+            APP.zoom = zoom;
+            svg.call(zoom).on("dblclick.zoom", null);
+
+            // 更新函數
+            function update(source) {
+                const treeData = treeLayout(root);
+                const nodes = treeData.descendants();
+                const links = treeData.links();
+
+                // 節點生成
+                const node = g.selectAll('g.node')
+                    .data(nodes, d => d.id || (d.id = Math.random()));
+
+                const nodeEnter = node.enter().append('g')
+                    .attr('class', 'node')
+                    .attr("transform", d => `translate(${source.y0 || 0},${source.x0 || 0})`)
+                    .on('click', (e, d) => {
+                        // 點擊折疊/展開
+                        if (d.children) {
+                            d._children = d.children;
+                            d.children = null;
+                        } else {
+                            d.children = d._children;
+                            d._children = null;
+                        }
+                        update(d);
+                    });
+
+                nodeEnter.append('circle')
+                    .attr('r', 6)
+                    .style("fill", d => d._children ? "#555" : "#fff");
+
+                // v2.1.0: 支援多行文字或長文字處理
+                nodeEnter.append('text')
+                    .attr("dy", ".35em")
+                    .attr("x", d => d.children || d._children ? -13 : 13)
+                    .attr("text-anchor", d => d.children || d._children ? "end" : "start")
+                    .text(d => d.data.name)
+                    .style("font-size", d => Math.max(12, 16 - d.depth) + "px");
+
+                // Transition
+                const nodeUpdate = node.merge(nodeEnter).transition().duration(500)
+                    .attr("transform", d => `translate(${d.y},${d.x})`);
+
+                nodeUpdate.select('circle')
+                    .style("fill", d => d._children ? "var(--mm-node-stroke)" : "var(--mm-node-bg)");
+
+                const nodeExit = node.exit().transition().duration(500)
+                    .attr("transform", d => `translate(${source.y},${source.x})`)
+                    .remove();
+
+                // 連線
+                const link = g.selectAll('path.link')
+                    .data(links, d => d.target.id);
+
+                const linkEnter = link.enter().insert('path', "g")
+                    .attr("class", "link")
+                    .attr('d', d => {
+                        const o = {x: source.x0 || 0, y: source.y0 || 0};
+                        return diagonal(o, o);
+                    });
+
+                link.merge(linkEnter).transition().duration(500)
+                    .attr('d', d => diagonal(d.source, d.target));
+
+                link.exit().transition().duration(500).remove();
+
+                // 記錄舊位置
+                nodes.forEach(d => {
+                    d.x0 = d.x;
+                    d.y0 = d.y;
+                });
+            }
+
+            // 貝茲曲線路徑
+            function diagonal(s, d) {
+                return `M ${s.y} ${s.x}
+                        C ${(s.y + d.y) / 2} ${s.x},
+                          ${(s.y + d.y) / 2} ${d.x},
+                          ${d.y} ${d.x}`;
+            }
+
+            // 初次渲染
+            root.x0 = height / 2;
+            root.y0 = 0;
+            update(root);
+            
+            // 自動適應
+            setTimeout(fitMindMap, 500);
+        }
+
+        // v2.1.0: 改進的 Markdown 解析器 (包含內文)
+        function parseMarkdownImproved(md) {
+            const lines = md.split('\n');
+            const root = { name: APP.currentFile || 'Root', children: [], level: 0 };
+            const stack = [root];
+
+            lines.forEach(line => {
+                const trimmed = line.trim();
+                if (!trimmed) return;
+
+                // 判斷是否為標題
+                const match = line.match(/^(#+)\s+(.*)/);
+                
+                if (match) {
+                    const level = match[1].length;
+                    const text = match[2];
+                    const node = { name: text, children: [], level: level };
+
+                    // 回溯堆疊
+                    while (stack.length > 1 && stack[stack.length - 1].level >= level) {
+                        stack.pop();
+                    }
+                    // 加入父節點
+                    const parent = stack[stack.length - 1];
+                    if(!parent.children) parent.children = [];
+                    parent.children.push(node);
+                    stack.push(node);
+                } else {
+                    // v2.1.0: 這是「內文」
+                    // 將內文作為當前標題的「葉子節點」
+                    // 限制長度避免心智圖爆炸
+                    let text = trimmed;
+                    if (text.length > 20) text = text.substring(0, 20) + '...';
+                    
+                    const parent = stack[stack.length - 1];
+                    // 只有當 parent 真的是一個標題節點時才加
+                    if (parent) {
+                        if(!parent.children) parent.children = [];
+                        // 為了區分，給予特殊的 type 或直接加
+                        parent.children.push({ name: text, children: null, level: parent.level + 1 });
+                    }
+                }
+            });
+            return root;
+        }
+
+        function fitMindMap() {
+            if (!APP.svg || !APP.g) return;
+            const bounds = APP.g.node().getBBox();
+            const parent = APP.svg.node().parentElement;
+            const fullW = parent.clientWidth;
+            const fullH = parent.clientHeight;
+            
+            if (bounds.width === 0) return;
+
+            const scale = 0.9 / Math.max(bounds.width / fullW, bounds.height / fullH);
+            const tx = fullW / 2 - scale * (bounds.x + bounds.width / 2);
+            const ty = fullH / 2 - scale * (bounds.y + bounds.height / 2);
+
+            APP.svg.transition().duration(750).call(
+                APP.zoom.transform, 
+                d3.zoomIdentity.translate(tx, ty).scale(scale)
+            );
+        }
+
+        // =========================================
+        // 4. 工具列邏輯 (Unified Toolbar)
+        // =========================================
+        function initToolbar() {
+            // 放大 / 字體加大
+            document.getElementById('btn-zoom-in').addEventListener('click', () => {
+                if (APP.currentMode === 1) { // Mindmap
+                    if(APP.svg) APP.svg.transition().call(APP.zoom.scaleBy, 1.2);
+                } else { // Markdown / Raw
+                    changeFontSize(2);
+                }
+            });
+
+            // 縮小 / 字體變小
+            document.getElementById('btn-zoom-out').addEventListener('click', () => {
+                if (APP.currentMode === 1) {
+                    if(APP.svg) APP.svg.transition().call(APP.zoom.scaleBy, 0.8);
+                } else {
+                    changeFontSize(-2);
+                }
+            });
+
+            // 重置
+            document.getElementById('btn-reset').addEventListener('click', () => {
+                if (APP.currentMode === 1) {
+                    fitMindMap();
+                } else {
+                    APP.fontSize = 16;
+                    applyFontSize();
+                }
+            });
+        }
+
+        function changeFontSize(delta) {
+            APP.fontSize = Math.max(10, Math.min(32, APP.fontSize + delta));
+            applyFontSize();
+        }
+
+        function applyFontSize() {
+            // 應用到 Markdown 和 Raw 視圖
+            document.getElementById('view-markdown').style.fontSize = APP.fontSize + 'px';
+            document.getElementById('view-raw').style.fontSize = APP.fontSize + 'px';
+            // 儲存設定
+            localStorage.setItem('fontSize', APP.fontSize);
+        }
+
+        // =========================================
+        // 5. 側邊欄與設定
+        // =========================================
+        function initSidebar() {
+             // 側邊欄切換
+            const toggleBtn = document.getElementById('sidebar-toggle');
+            if (toggleBtn) {
+                toggleBtn.addEventListener('click', () => {
+                    document.body.classList.toggle('sidebar-closed');
+                });
+            }
+        }
+
+        function initSettings() {
+            // 深色模式
+            const toggle = document.getElementById('dark-mode-toggle');
+            toggle.addEventListener('change', (e) => {
+                if(e.target.checked) {
+                    document.body.classList.add('dark-mode');
+                    document.getElementById('light-css').disabled = true;
+                    document.getElementById('dark-css').disabled = false;
+                } else {
+                    document.body.classList.remove('dark-mode');
+                    document.getElementById('light-css').disabled = false;
+                    document.getElementById('dark-css').disabled = true;
+                }
+                localStorage.setItem('dark-mode', e.target.checked);
+            });
+            
+            // 讀取記憶
+            if(localStorage.getItem('dark-mode') === 'true') {
+                toggle.checked = true;
+                toggle.dispatchEvent(new Event('change'));
+            }
+            const savedSize = parseInt(localStorage.getItem('fontSize'));
+            if(savedSize) APP.fontSize = savedSize;
+        }
+
+        async function fetchFileTree() {
+            try {
+                const url = `https://api.github.com/repos/${GITHUB_USERNAME}/${REPO_NAME}/git/trees/${BRANCH_NAME}?recursive=1`;
+                const res = await fetch(url);
+                const data = await res.json();
+                
+                const files = data.tree.filter(i => i.type === 'blob' && i.path.endsWith('.md') && !EXCLUDE_FILES.includes(i.path));
+                buildTreeUI(files);
+            } catch (e) {
+                document.getElementById('file-tree-container').innerHTML = `<div style="color:red; padding:20px;">列表載入錯誤</div>`;
+            }
+        }
+
+        function buildTreeUI(files) {
+            const container = document.getElementById('file-tree-container');
+            container.innerHTML = '<ul></ul>';
+            const rootUl = container.querySelector('ul');
+
+            // 簡單構建樹結構
+            const root = { children: {} };
+            files.forEach(f => {
+                const parts = f.path.split('/');
+                let curr = root;
+                parts.forEach((p, i) => {
+                    if (i === parts.length - 1) {
+                        if(!curr.files) curr.files = [];
+                        curr.files.push({ name: p, path: f.path });
+                    } else {
+                        if(!curr.children[p]) curr.children[p] = { children: {}, files: [], name: p };
+                        curr = curr.children[p];
+                    }
+                });
+            });
+
+            function createNode(data, parentEl) {
+                // 資料夾
+                Object.values(data.children).forEach(dir => {
+                    const li = document.createElement('li');
+                    li.className = 'tree-node collapsed'; // 預設折疊
+                    li.innerHTML = `
+                        <div class="folder-title">
+                            <span class="arrow">▼</span> 📁 ${dir.name}
+                        </div>
+                        <ul></ul>
+                    `;
+                    li.querySelector('.folder-title').onclick = (e) => {
+                        e.currentTarget.parentElement.classList.toggle('collapsed');
+                    };
+                    parentEl.appendChild(li);
+                    createNode(dir, li.querySelector('ul'));
+                });
+                
+                // 檔案
+                if(data.files) {
+                    data.files.forEach(f => {
+                        const li = document.createElement('li');
+                        li.className = 'tree-node';
+                        li.innerHTML = `<a class="file-link" data-path="${f.path}">📄 ${f.name}</a>`;
+                        li.querySelector('a').onclick = () => loadFile(f.path);
+                        parentEl.appendChild(li);
+                    });
+                }
+            }
+            createNode(root, rootUl);
+        }
+
+        // 輔助功能
+        function renderMath(el) {
+            if(window.renderMathInElement) {
+                renderMathInElement(el, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '$', right: '$', display: false}
+                    ],
+                    throwOnError: false
+                });
+            }
+        }
+        function showStatus(msg, isError) {
+            const el = document.getElementById('status-overlay');
+            el.textContent = msg;
+            el.style.color = isError ? 'red' : 'inherit';
+            el.style.display = 'block';
+        }
+        function hideStatus() {
+            document.getElementById('status-overlay').style.display = 'none';
+        }
+
+    </script>
+</body>
+</html>
