@@ -1,4 +1,6 @@
 ## 介紹
+- [v1.1.7 穩定版](https://klhrd.github.io/class_note/md_viewer/v1.1.7)
+- [v2.1.0 beta](https://klhrd.github.io/class_note/md_viewer/v2.1.0)
 
 ## 應用程式版本歷史
 ### v1.1.7 (2025-11-30)
