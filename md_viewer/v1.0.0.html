@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown 筆記瀏覽器</title>
+    <style>
+        /* 使用 CSS 變數來控制側邊欄寬度 */
+        :root {
+            --sidebar-width: 320px;
+            --toggle-button-size: 30px;
+        }
+
+        /* 基礎樣式和佈局 */
+        body {
+            margin: 0;
+            display: flex;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: #333;
+            background-color: #fff;
+            height: 100vh;
+            overflow: hidden; /* 防止 body 滾動 */
+        }
+
+        /* --- 側邊欄樣式 (可滾動) --- */
+        #sidebar {
+            width: var(--sidebar-width); 
+            min-width: 200px; 
+            max-width: 80vw;  
+            height: 100vh;
+            overflow-y: auto; /* 僅側邊欄可滾動 */
+            border-right: 1px solid #e0e0e0;
+            box-sizing: border-box;
+            background-color: #f9f9f9;
+            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.05);
+            padding: 0;
+            user-select: none;
+            flex-shrink: 0; 
+        }
+
+        /* 側邊欄收合時的狀態 */
+        body.sidebar-collapsed #sidebar {
+            display: none;
+        }
+
+
+        #sidebar-header {
+            padding: 20px 25px;
+            margin: 0;
+            color: #1a73e8;
+            font-size: 1.25rem;
+            border-bottom: 2px solid #1a73e8;
+            background-color: #fff;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        #file-tree-container {
+            padding: 10px 20px;
+        }
+
+        /* 根節點的 UL 不需要額外縮排 */
+        #file-tree-container > ul {
+             padding-left: 0;
+        }
+
+        /* --- 樹狀檢視 (Tree View) 樣式 --- */
+        .tree-node {
+            list-style-type: none;
+            margin: 2px 0;
+        }
+
+        .tree-node ul {
+            padding-left: 20px;
+            margin: 5px 0 5px 12px;
+            border-left: 1px dashed #ccc;
+        }
+
+        .tree-folder-title {
+            cursor: pointer;
+            padding: 5px 8px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            font-weight: 500;
+            transition: background-color 0.2s ease;
+        }
+
+        .tree-folder-title:hover {
+            background-color: #e0e7ff;
+        }
+
+        .tree-folder-title .icon {
+            display: inline-block;
+            width: 16px;
+            text-align: center;
+            margin-right: 5px;
+            transition: transform 0.1s ease-in-out;
+        }
+
+        .tree-node.collapsed > .tree-folder-title .icon {
+            transform: rotate(-90deg);
+        }
+
+        .tree-node.collapsed > ul {
+            display: none;
+        }
+
+        .tree-file {
+            display: block;
+            padding: 5px 8px 5px 30px; 
+            text-decoration: none;
+            color: #444;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+            font-size: 0.95rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            user-select: text; 
+        }
+
+        .tree-file:hover {
+            background-color: #e0e7ff;
+            color: #1a73e8;
+        }
+
+        .tree-file.active {
+            font-weight: bold;
+            background-color: #1a73e8;
+            color: #ffffff;
+            border-color: #1a73e8;
+        }
+
+        /* --- 側邊欄寬度調整器 --- */
+        #resizer {
+            width: 5px;
+            height: 100vh;
+            background: #f1f1f1;
+            cursor: col-resize;
+            transition: background-color 0.2s ease;
+            flex-shrink: 0;
+        }
+        #resizer:hover,
+        #resizer.resizing {
+            background: #1a73e8; /* 拖曳時顯示高亮 */
+        }
+        
+        /* 側邊欄收合時隱藏調整器 */
+        body.sidebar-collapsed #resizer {
+            display: none;
+        }
+
+        /* --- Markdown 容器樣式 --- */
+        #markdown-view-container {
+            flex-grow: 1;
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+            width: 0;
+        }
+        
+        /* 用於顯示渲染後 HTML 的容器 */
+        #markdown-content {
+            padding: 20px 40px 40px 40px;
+            height: 100vh;
+            overflow-y: auto;
+            box-sizing: border-box;
+            width: 100%;
+        }
+
+        /* --- 側邊欄開關按鈕 --- */
+        #sidebar-toggle {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 50;
+            width: var(--toggle-button-size);
+            height: var(--toggle-button-size);
+            background-color: rgba(255, 255, 255, 0.8);
+            border: 1px solid #ccc;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #333;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            transition: background-color 0.2s ease;
+        }
+        #sidebar-toggle:hover {
+            background-color: #fff;
+        }
+
+        /* 載入和錯誤提示 */
+        .status-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.5rem;
+            color: #777;
+            padding: 20px;
+            background-color: rgba(255, 255, 255, 0.8);
+            border-radius: 8px;
+        }
+        .status-message.error {
+            color: #D32F2F; /* 紅色 */
+        }
+        
+        .sidebar-status {
+            padding: 20px;
+            font-size: 1rem;
+            color: #777;
+        }
+        .sidebar-status.error {
+             color: #D32F2F;
+        }
+
+    </style>
+    
+    <!-- 引入 GitHub Markdown 樣式 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.1.0/github-markdown-light.min.css">
+
+</head>
+<body>
+    <div id="sidebar">
+        <h3 id="sidebar-header">📂 筆記檔案列表</h3>
+        <div id="file-tree-container">
+            <!-- 檔案樹將在這裡動態生成 -->
+            <div class="sidebar-status" id="sidebar-status">正在載入...</div>
+        </div>
+    </div>
+    
+    <div id="resizer"></div>
+
+    <div id="markdown-view-container">
+        <!-- 新增側邊欄開關按鈕 -->
+        <button id="sidebar-toggle" title="收合/展開側邊欄">❮</button>
+
+        <!-- 將 svg 替換為 div 容器 -->
+        <div id="markdown-content" class="markdown-body"></div>
+        
+        <div id="content-status" class="status-message">請從左側選擇一個筆記檔案</div>
+    </div>
+    
+    <!-- 引入 marked.js 用於渲染 Markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
+
+    <script>
+        // =================================================================
+        //                 🔔 GitHub 資訊 (請修改這裡) 🔔
+        // =================================================================
+        const GITHUB_USERNAME = 'klhrd';      
+        const REPO_NAME = 'class_note';       
+        const BRANCH_NAME = 'main'; // 或是 'master'
+        // =================================================================
+        
+        const MARKDOWN_EXTENSION = '.md';
+        
+        const fileLinksMap = new Map();
+        let activeLink = null;
+        // 移除 let mm;
+
+        // ====== 1. Markdown 渲染核心函式 (已修改) ======
+        async function renderMarkdown(filePath, sourceLink) {
+            const contentStatus = document.getElementById('content-status');
+            const contentEl = document.getElementById('markdown-content');
+            
+            // 清空舊內容
+            contentEl.innerHTML = ''; 
+            contentStatus.textContent = `正在載入 ${filePath} 的內容...`;
+            contentStatus.className = 'status-message'; 
+            contentStatus.style.display = 'block';
+
+            try {
+                // 檢查 marked.js 是否已準備好
+                if (typeof marked === 'undefined') {
+                    throw new Error("Marked.js 函式庫尚未載入完成。");
+                }
+
+                const rawFileUrl = `https://raw.githubusercontent.com/${GITHUB_USERNAME}/${REPO_NAME}/${BRANCH_NAME}/${filePath}`;
+                
+                const response = await fetch(rawFileUrl);
+                if (!response.ok) {
+                    throw new Error(`無法載入檔案 (HTTP ${response.status})`);
+                }
+                const markdownContent = await response.text();
+                                
+                if (!markdownContent.trim()) {
+                    // 如果檔案為空，顯示提示而非錯誤
+                    contentEl.innerHTML = '<em>這個檔案沒有內容。</em>';
+                } else {
+                    // 使用 marked.js 將 Markdown 轉換為 HTML
+                    contentEl.innerHTML = marked.parse(markdownContent);
+                }
+                
+                contentStatus.style.display = 'none';
+                
+                if (sourceLink) {
+                    if (activeLink) {
+                        activeLink.classList.remove('active');
+                    }
+                    sourceLink.classList.add('active');
+                    activeLink = sourceLink;
+                    
+                    history.pushState({ path: filePath }, null, `#${filePath}`);
+                }
+
+            } catch (error) {
+                console.error("Markdown 渲染錯誤:", error);
+                contentStatus.textContent = `❌ 渲染錯誤: ${error.message}`;
+                contentStatus.className = 'status-message error';
+            }
+        }
+
+        // ====== 2. 檔案樹資料處理 (無變更) ======
+        async function fetchFileTree() {
+            const apiUrl = `https://api.github.com/repos/${GITHUB_USERNAME}/${REPO_NAME}/git/trees/${BRANCH_NAME}?recursive=1`;
+            
+            const response = await fetch(apiUrl);
+            if (!response.ok) {
+                throw new Error(`無法從 GitHub API 取得檔案樹 (HTTP ${response.status})`);
+            }
+            const data = await response.json();
+            
+            if (data.truncated) {
+                console.warn("GitHub API 回應被截斷，檔案列表可能不完整。");
+            }
+            
+            return data.tree
+                .filter(item => item.type === 'blob' && item.path.endsWith(MARKDOWN_EXTENSION))
+                .map(item => item.path);
+        }
+
+        function buildTree(paths) {
+            const root = { name: 'root', type: 'tree', children: [] };
+
+            paths.forEach(path => {
+                const parts = path.split('/');
+                let currentNode = root;
+
+                parts.forEach((part, index) => {
+                    let childNode = currentNode.children.find(n => n.name === part);
+                    const isFile = index === parts.length - 1;
+
+                    if (!childNode) {
+                        if (isFile) {
+                            childNode = { name: part, type: 'blob', path: path };
+                            currentNode.children.push(childNode);
+                        } else {
+                            childNode = {
+                                name: part,
+                                type: 'tree',
+                                path: parts.slice(0, index + 1).join('/'),
+                                children: []
+                            };
+                            currentNode.children.push(childNode);
+                        }
+                    }
+                    currentNode = childNode;
+                });
+            });
+            
+            const sortNodes = (nodes) => {
+                nodes.sort((a, b) => {
+                    if (a.type !== b.type) {
+                        return a.type === 'tree' ? -1 : 1; 
+                    }
+                    return a.name.localeCompare(b.name, 'zh-TW'); 
+                });
+                nodes.forEach(node => {
+                    if (node.type === 'tree') {
+                        sortNodes(node.children);
+                    }
+                });
+            };
+            
+            sortNodes(root.children);
+            return root;
+        }
+
+        // ====== 3. 渲染側邊欄 (Tree View) (無變更) ======
+        function createTreeViewNode(node) {
+            const li = document.createElement('li');
+            li.className = 'tree-node';
+
+            if (node.type === 'tree') {
+                li.classList.add('collapsed'); 
+                
+                const title = document.createElement('div');
+                title.className = 'tree-folder-title';
+                title.innerHTML = `<span class="icon">▶</span> <span>${node.name}</span>`;
+                
+                title.addEventListener('click', (e) => {
+                    e.stopPropagation(); 
+                    li.classList.toggle('collapsed');
+                });
+                
+                li.appendChild(title);
+
+                const childrenUl = document.createElement('ul');
+                node.children.forEach(child => {
+                    childrenUl.appendChild(createTreeViewNode(child));
+                });
+                li.appendChild(childrenUl);
+
+            } else if (node.type === 'blob') {
+                li.classList.add('tree-file-node');
+                
+                const link = document.createElement('a');
+                link.className = 'tree-file';
+                link.href = `#${node.path}`;
+                link.textContent = node.name; 
+                link.dataset.path = node.path; 
+                
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    renderMarkdown(node.path, link); // <-- 呼叫新函式
+                });
+                
+                li.appendChild(link);
+                fileLinksMap.set(node.path, link); 
+            }
+            return li;
+        }
+
+        function findAndSelectFile(path) {
+            const link = fileLinksMap.get(path);
+            if (!link) {
+                return false;
+            }
+
+            renderMarkdown(path, link); // <-- 呼叫新函式
+            
+            let currentNode = link.parentElement; 
+            while (currentNode && currentNode.id !== 'file-tree-container') {
+                if (currentNode.tagName === 'LI' && currentNode.classList.contains('tree-node')) {
+                    currentNode.classList.remove('collapsed'); 
+                }
+                currentNode = currentNode.parentElement;
+            }
+            
+            link.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return true;
+        }
+
+        // ====== 4. 初始化應用程式 (已修改) ======
+        async function initializeApp() {
+            const container = document.getElementById('file-tree-container');
+            const statusEl = document.getElementById('sidebar-status');
+
+            try {
+                const paths = await fetchFileTree();
+                
+                if (paths.length === 0) {
+                    throw new Error("儲存庫中找不到任何 .md 檔案。");
+                }
+                
+                const tree = buildTree(paths);
+                statusEl.remove();
+                
+                const rootUl = document.createElement('ul');
+                
+                // --- 新增: 建立一個可收合的根節點 ---
+                const repoNode = { name: REPO_NAME, type: 'tree', children: tree.children };
+                const repoLi = createTreeViewNode(repoNode);
+                
+                // 預設展開根節點
+                repoLi.classList.remove('collapsed');
+                
+                rootUl.appendChild(repoLi);
+                container.appendChild(rootUl);
+                // --- 修改結束 ---
+
+
+                const hashPath = window.location.hash.substring(1);
+                let loaded = false;
+                
+                if (hashPath) {
+                    loaded = findAndSelectFile(hashPath);
+                }
+                if (!loaded) {
+                    loaded = findAndSelectFile('README.md');
+                }
+                if (!loaded && fileLinksMap.size > 0) {
+                    const firstFile = fileLinksMap.keys().next().value;
+                    findAndSelectFile(firstFile);
+                }
+
+            } catch (error) {
+                console.error("初始化應用程式錯誤:", error);
+                statusEl.textContent = `❌ 載入錯誤: ${error.message}`;
+                statusEl.className = 'sidebar-status error';
+            }
+        }
+        
+        // ====== 5. 處理瀏覽器返回/前進按鈕 (無變更) ======
+        window.addEventListener('popstate', (event) => {
+            let path;
+            if (event.state && event.state.path) {
+                path = event.state.path;
+            } else {
+                path = window.location.hash.substring(1);
+            }
+
+            if (path) {
+                findAndSelectFile(path);
+            }
+        });
+
+        // ====== 6. 處理側邊欄寬度調整 (無變更) ======
+        function setupResizer() {
+            const resizer = document.getElementById('resizer');
+            if (!resizer) return;
+
+            const sidebar = document.getElementById('sidebar');
+            const container = document.querySelector('body');
+
+            let isResizing = false;
+
+            const resize = (e) => {
+                if (!isResizing) return;
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                let newWidth = clientX - container.offsetLeft;
+                
+                const minWidth = parseInt(getComputedStyle(sidebar).minWidth, 10);
+                const maxWidth = parseInt(getComputedStyle(sidebar).maxWidth, 10);
+
+                if (newWidth < minWidth) newWidth = minWidth;
+                if (newWidth > maxWidth) newWidth = maxWidth;
+
+                document.documentElement.style.setProperty('--sidebar-width', `${newWidth}px`);
+            };
+
+            const stopResize = () => {
+                isResizing = false;
+                resizer.classList.remove('resizing');
+                window.removeEventListener('pointermove', resize);
+                window.removeEventListener('pointerup', stopResize);
+            };
+
+            resizer.addEventListener('pointerdown', (e) => {
+                isResizing = true;
+                resizer.classList.add('resizing');
+                e.preventDefault(); 
+                window.addEventListener('pointermove', resize);
+                window.addEventListener('pointerup', stopResize);
+            });
+        }
+
+        // ====== 7. (新增) 處理側邊欄開關按鈕 ======
+        function setupSidebarToggle() {
+            const toggleBtn = document.getElementById('sidebar-toggle');
+            if (!toggleBtn) return;
+
+            toggleBtn.addEventListener('click', () => {
+                const isCollapsed = document.body.classList.toggle('sidebar-collapsed');
+                toggleBtn.textContent = isCollapsed ? '❯' : '❮';
+                toggleBtn.title = isCollapsed ? '展開側邊欄' : '收合側邊欄';
+            });
+        }
+
+        // 'load' 事件會等待所有外部資源 (包含 marked.js) 都載入完成
+        window.addEventListener('load', () => {
+            initializeApp();
+            setupResizer(); 
+            setupSidebarToggle(); // <-- 新增: 設定開關按鈕
+        });
+    </script>
+</body>
+</html>
