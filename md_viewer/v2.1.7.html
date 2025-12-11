@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Markdown 筆記/心智圖檢視器 v2.1.7</title>
     
+    <!-- D3.js & Marked & KaTeX -->
     <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@12.0.1/lib/marked.umd.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
@@ -109,17 +110,14 @@
         }
         #view-mindmap:active { cursor: grabbing; }
 
-        /* --- Mindmap Node Styling --- */
-        
-        /* 1. HTML Content (Top Layer) */
+        /* Mindmap Content Styling */
         .node-foreign-object { 
             overflow: visible; 
             pointer-events: none; 
-            z-index: 10;
         }
         
         .node-content-div {
-            pointer-events: auto; /* Allow selecting text */
+            pointer-events: auto;
             display: inline-block;
             width: max-content; 
             max-width: 400px;
@@ -129,15 +127,10 @@
             white-space: normal; 
             word-wrap: break-word;
             padding: 0; margin: 0;
-            background-color: transparent; /* No background to show fallback if needed */
+            background-color: transparent;
         }
         
-        /* Ensure text color is explicit */
-        .node-content-div, .node-content-div * {
-            color: var(--text-color) !important;
-        }
-
-        /* Specific Element Styling */
+        /* Ensure text color is applied */
         .node-content-div h1 { font-size: 1.4em; border-bottom: 2px solid var(--accent-color); display: inline-block; margin: 0 0 2px 0; }
         .node-content-div h2 { font-size: 1.2em; font-weight: bold; margin: 0; }
         .node-content-div p { margin: 0; }
@@ -146,16 +139,6 @@
         .node-content-div img { max-width: 100%; height: auto; border-radius: 4px; margin-top: 4px; }
         .node-content-div table { border-collapse: collapse; margin-top: 4px; border: 1px solid var(--border-color); }
         .node-content-div th, .node-content-div td { border: 1px solid var(--border-color); padding: 2px 4px; font-size: 0.9em; }
-
-        /* 2. Fallback SVG Text (Bottom Layer) */
-        .fallback-text {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            font-size: 15px;
-            fill: var(--text-color);
-            alignment-baseline: hanging; /* Align top like div */
-            pointer-events: none;
-            opacity: 0.5; /* Slightly dim so we know it's fallback, or set to 1 if preferred */
-        }
 
         .mindmap-link { fill: none; stroke-width: 2px; stroke-opacity: 0.8; }
         .mindmap-toggle { cursor: pointer; stroke-width: 2px; transition: all 0.2s; }
@@ -218,7 +201,7 @@
                     <span class="slider"></span>
                 </label>
             </div>
-            <div style="margin-top:8px; font-size:11px; color:#888; text-align:center;">v2.1.7 Dual Render</div>
+            <div style="margin-top:8px; font-size:11px; color:#888; text-align:center;">v2.1.7 Namespace Fix</div>
         </div>
     </div>
 
@@ -248,6 +231,7 @@
         </div>
     </div>
 
+    <!-- 測量容器 -->
     <div id="measure-container" style="position:absolute; visibility:hidden; pointer-events:none; top:0; left:0; width:auto; height:auto;"></div>
 
     <script>
@@ -314,7 +298,9 @@
                 document.getElementById('light-css').disabled = false;
                 document.getElementById('dark-css').disabled = true;
             }
-            if(STATE.mode === 1) renderMindMap(STATE.markdown, false); 
+            // Update Text Color Variable for JS
+            document.documentElement.style.setProperty('--current-text', isDark ? '#c9d1d9' : '#333333');
+            if(STATE.mode === 1) renderMindMap(STATE.markdown, false); // Force redraw
         }
 
         function initResizer() {
@@ -371,6 +357,7 @@
             localStorage.setItem('fontSize', STATE.fontSize);
         }
 
+        // ================= File Tree Logic =================
         async function fetchFiles() {
             try {
                 const url = `https://api.github.com/repos/${CONFIG.user}/${CONFIG.repo}/git/trees/${CONFIG.branch}?recursive=1`;
@@ -410,7 +397,7 @@
                 let dirNode = node.children[dName];
                 let displayName = dName;
                 
-                // Smart Compact: Merge single child folders
+                // Smart Compact
                 while (Object.keys(dirNode.children).length === 1 && (!dirNode.files || dirNode.files.length === 0)) {
                     const singleChildName = Object.keys(dirNode.children)[0];
                     dirNode = dirNode.children[singleChildName];
@@ -484,7 +471,7 @@
             } catch(e) { console.error(e); }
         }
 
-        // ================= MindMap Engine v2.1.7 (Dual Render) =================
+        // ================= MindMap Engine v2.1.7 (Namespace Fix) =================
         function measureNodeSize(html) {
             const container = document.getElementById('measure-container');
             const div = document.createElement('div');
@@ -504,11 +491,6 @@
                 if (!markdown) return;
                 const rootData = parseMarkdownToTree(markdown);
                 const measureAll = (node) => {
-                    // Extract plain text for fallback
-                    const tempDiv = document.createElement('div');
-                    tempDiv.innerHTML = node.data.html;
-                    node.data.plainText = tempDiv.textContent.substring(0, 50); // Limit length
-
                     const size = measureNodeSize(node.data.html);
                     node.width = size.width;
                     node.height = size.height;
@@ -529,9 +511,10 @@
             STATE.zoom = zoom; svg.call(zoom).on('dblclick.zoom', null);
 
             update(root);
-            if(!isRedraw) setTimeout(fitMindMap, 50);
+            if(!isRedraw) setTimeout(fitMindMap, 100);
 
             function update(source) {
+                // Layout
                 root.eachBefore(d => {
                     d.y = d.parent ? (d.parent.y + d.parent.data.width + 60) : 50;
                 });
@@ -540,7 +523,7 @@
                     const children = d.children;
                     if (!children || children.length === 0) {
                         d.x = currentY;
-                        currentY += d.data.height + 8;
+                        currentY += d.data.height + 8; // Tighter vertical spacing
                     } else {
                         d.x = (children[0].x + children[children.length - 1].x) / 2;
                         if (d.x + d.data.height/2 + 5 > currentY) currentY = d.x + d.data.height/2 + 5;
@@ -553,18 +536,10 @@
                 const node = g.selectAll('.mindmap-node').data(nodes, d => d.id || (d.id = Math.random()));
                 const nodeEnter = node.enter().append('g')
                     .attr('class', 'mindmap-node')
-                    .attr('transform', d => `translate(${source.y0||d.y}, ${source.x0||d.x})`);
+                    .attr('transform', d => `translate(${source.y0||d.y}, ${source.x0||d.x})`)
+                    .attr('opacity', 0);
 
-                // === PLAN B: SVG Text (Fallback) ===
-                // This will show if ForeignObject fails or opacity bugs out
-                nodeEnter.append('text')
-                    .attr('class', 'fallback-text')
-                    .attr('x', 0)
-                    .attr('y', 0)
-                    .attr('dy', '1em') // Rough alignment
-                    .text(d => d.data.plainText);
-
-                // === PLAN A: Foreign Object (Rich HTML) ===
+                // --- 核心修復：使用 createElementNS 手動建立 XHTML 元素 ---
                 const fo = nodeEnter.append('foreignObject')
                     .attr('class', 'node-foreign-object')
                     .attr('width', d => d.data.width)
@@ -572,9 +547,16 @@
                     .attr('x', 0)
                     .attr('y', d => -d.data.height + 5); 
 
-                fo.append('xhtml:div')
-                    .attr('class', 'node-content-div')
-                    .html(d => d.data.html);
+                // 這裡不使用 .append('xhtml:div')，而是用 append(creator) 方式
+                fo.append(function() {
+                    return document.createElementNS('http://www.w3.org/1999/xhtml', 'div');
+                })
+                .attr('class', 'node-content-div')
+                // 強制寫入顏色，解決 SVG 內部 CSS 變數繼承問題
+                .style('color', document.body.classList.contains('dark-mode') ? '#c9d1d9' : '#333333')
+                .each(function(d) {
+                    this.innerHTML = d.data.html;
+                });
 
                 // Underline
                 nodeEnter.append('path')
@@ -595,14 +577,14 @@
                         update(d);
                     });
 
-                const nodeUpdate = node.merge(nodeEnter).transition().duration(0) // No transition for instant render
-                    .attr('transform', d => `translate(${d.y}, ${d.x})`);
+                const nodeUpdate = node.merge(nodeEnter).transition().duration(400)
+                    .attr('transform', d => `translate(${d.y}, ${d.x})`).attr('opacity', 1);
                 
                 nodeUpdate.select('circle')
                     .style('fill', d => d._children ? COLORS[d.depth % COLORS.length] : 'var(--bg-color)')
                     .style('display', d => (d.children || d._children) ? 'inline' : 'none');
 
-                node.exit().remove();
+                node.exit().transition().duration(400).attr('opacity', 0).remove();
 
                 const link = g.selectAll('.mindmap-link').data(links, d => d.target.id);
                 const linkEnter = link.enter().insert('path', 'g').attr('class', 'mindmap-link')
@@ -611,9 +593,9 @@
                         const o = {x: source.x0||d.source.x, y: source.y0||d.source.y, w: d.source.data.width};
                         return diagonal({x: o.x, y: o.y + o.w}, {x: o.x, y: o.y + o.w}); 
                     });
-                link.merge(linkEnter).transition().duration(0) // No transition
+                link.merge(linkEnter).transition().duration(400)
                     .attr('d', d => diagonal({x: d.source.x, y: d.source.y + d.source.data.width}, {x: d.target.x, y: d.target.y}));
-                link.exit().remove();
+                link.exit().transition().duration(400).attr('opacity', 0).remove();
 
                 nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
             }
@@ -631,7 +613,7 @@
             const scale = 0.9 / Math.max(bounds.width / parent.clientWidth, bounds.height / parent.clientHeight);
             const tx = parent.clientWidth/2 - scale * (bounds.x + bounds.width/2);
             const ty = parent.clientHeight/2 - scale * (bounds.y + bounds.height/2);
-            STATE.svg.call(STATE.zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+            STATE.svg.transition().duration(750).call(STATE.zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
         }
 
         function parseMarkdownToTree(md) {
