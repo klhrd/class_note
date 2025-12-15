@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Markdown 筆記/心智圖檢視器 v2.1.10</title>
+    
+    <!-- Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.1/lib/marked.umd.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js"></script>
+    
+    <style>
+        :root {
+            --sidebar-width: 280px;
+            --header-height: 48px;
+            --bg-color: #ffffff;
+            --text-color: #333333;
+            --sidebar-bg: #f9f9f9;
+            --border-color: #e0e0e0;
+            --accent-color: #0969da;
+            --accent-light: #e6f0ff;
+            --toolbar-bg: rgba(255, 255, 255, 0.95);
+            --toolbar-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            --mm-line: #a0a0a0;
+            --mm-bg: #ffffff;
+            --code-bg: #f6f8fa;
+        }
+
+        body.dark-mode {
+            --bg-color: #0d1117;
+            --text-color: #c9d1d9;
+            --sidebar-bg: #161b22;
+            --border-color: #30363d;
+            --accent-color: #58a6ff;
+            --accent-light: rgba(56, 139, 253, 0.15);
+            --toolbar-bg: rgba(22, 27, 34, 0.95);
+            --toolbar-shadow: 0 4px 12px rgba(0,0,0,0.6);
+            --mm-line: #6e7681;
+            --mm-bg: #0d1117;
+            --code-bg: #161b22;
+        }
+
+        * { box-sizing: border-box; }
+        
+        /* v2.1.10 Fix: Use dvh for mobile browsers to prevent toolbar hiding */
+        body {
+            margin: 0; padding: 0;
+            display: flex; 
+            height: 100vh; /* Fallback */
+            height: 100dvh; /* Dynamic Viewport Height */
+            overflow: hidden; /* Prevent body scroll */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color); color: var(--text-color);
+        }
+
+        /* Sidebar */
+        #sidebar {
+            width: var(--sidebar-width); min-width: 150px; max-width: 80vw;
+            background-color: var(--sidebar-bg); border-right: 1px solid var(--border-color);
+            display: flex; flex-direction: column; flex-shrink: 0;
+            transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            z-index: 50;
+        }
+        body.sidebar-closed #sidebar { margin-left: calc(var(--sidebar-width) * -1); position: absolute; }
+
+        #file-tree-container {
+            flex-grow: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 10px;
+        }
+        #sidebar-footer {
+            padding: 12px; border-top: 1px solid var(--border-color); font-size: 0.85em; background-color: var(--sidebar-bg);
+        }
+
+        /* Resizer */
+        #resizer {
+            width: 10px; cursor: col-resize; background: transparent; z-index: 100; margin-left: -5px; position: relative;
+        }
+        #resizer:hover::after {
+            content: ''; position: absolute; left: 4px; top: 0; bottom: 0; width: 2px; background-color: var(--accent-color);
+        }
+
+        /* Main */
+        #main-container {
+            flex-grow: 1; height: 100%; display: flex; flex-direction: column; overflow: hidden; position: relative; width: 0;
+        }
+
+        /* Header */
+        #header-bar {
+            height: var(--header-height); border-bottom: 1px solid var(--border-color);
+            display: flex; align-items: center; padding: 0 10px; gap: 8px;
+            flex-shrink: 0; background-color: var(--bg-color); z-index: 40;
+        }
+
+        .icon-btn {
+            background: transparent; border: 1px solid var(--border-color);
+            color: var(--text-color); border-radius: 6px;
+            width: 36px; height: 36px; padding: 0;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s; flex-shrink: 0;
+        }
+        .icon-btn:hover { background-color: var(--accent-light); border-color: var(--accent-color); color: var(--accent-color); }
+        .icon-btn svg { width: 20px; height: 20px; display: block; }
+
+        /* Panels */
+        .view-panel {
+            flex-grow: 1; overflow: auto; display: none; position: relative; padding: 20px 40px 100px;
+        }
+        .view-panel.active { display: block; }
+
+        /* Mindmap Area */
+        #view-mindmap {
+            padding: 0; overflow: hidden; background-color: var(--mm-bg); cursor: grab; touch-action: none;
+        }
+        #view-mindmap:active { cursor: grabbing; }
+
+        /* Mindmap Content */
+        .node-foreign-object { overflow: visible; pointer-events: none; z-index: 10; }
+        
+        .node-content-div {
+            pointer-events: auto;
+            display: inline-block;
+            width: max-content; 
+            max-width: 450px; /* Slightly increased width */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-size: 15px; 
+            line-height: 1.4;
+            white-space: normal; 
+            word-wrap: break-word;
+            padding: 2px 4px;
+            margin: 0;
+            background-color: transparent;
+        }
+        
+        /* Styles inside Mindmap Nodes */
+        .node-content-div h1 { font-size: 1.4em; border-bottom: 2px solid var(--accent-color); display: inline-block; margin: 0 0 3px 0; }
+        .node-content-div h2 { font-size: 1.2em; font-weight: bold; margin: 0; }
+        .node-content-div p { margin: 0; }
+        .node-content-div ul, .node-content-div ol { padding-left: 1.2em; margin: 1px 0; }
+        /* Code inside mindmap */
+        .node-content-div code { background: rgba(128,128,128,0.15); padding: 1px 3px; border-radius: 3px; font-family: monospace; font-size: 0.9em; }
+        /* LaTeX inside mindmap */
+        .node-content-div .katex { font-size: 1.1em; } 
+        
+        .node-content-div img { max-width: 100%; height: auto; border-radius: 4px; margin-top: 4px; }
+        .node-content-div table { border-collapse: collapse; margin-top: 4px; border: 1px solid var(--border-color); }
+        .node-content-div th, .node-content-div td { border: 1px solid var(--border-color); padding: 2px 4px; font-size: 0.9em; }
+
+        .mindmap-link { fill: none; stroke-width: 2px; stroke-opacity: 0.8; }
+        .mindmap-toggle { cursor: pointer; stroke-width: 2px; transition: all 0.2s; }
+        .mindmap-toggle:hover { r: 7; }
+
+        /* Toolbar */
+        #floating-toolbar {
+            position: absolute; bottom: 20px; right: 20px;
+            background-color: var(--toolbar-bg); padding: 6px; border-radius: 10px;
+            box-shadow: var(--toolbar-shadow); display: flex; gap: 8px;
+            backdrop-filter: blur(8px); border: 1px solid var(--border-color); z-index: 100;
+        }
+        .tool-btn {
+            width: 36px; height: 36px; border-radius: 8px; border: 1px solid transparent;
+            background: transparent; color: var(--text-color); cursor: pointer;
+            display: flex; justify-content: center; align-items: center; font-size: 18px;
+        }
+        .tool-btn:hover { background-color: var(--accent-light); color: var(--accent-color); }
+
+        /* File Tree */
+        ul { list-style: none; padding-left: 16px; margin: 0; }
+        #file-tree-container > ul { padding-left: 0; }
+        .folder-title, .file-link {
+            padding: 6px 8px; cursor: pointer; display: flex; align-items: center; gap: 6px;
+            border-radius: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            font-size: 14px; color: var(--text-color);
+        }
+        .folder-title:hover, .file-link:hover { background-color: rgba(128,128,128,0.08); }
+        .file-link.active { background-color: var(--accent-light); color: var(--accent-color); font-weight: 500; }
+        .arrow { display: inline-block; width: 14px; height: 14px; text-align: center; transition: transform 0.2s; font-size: 10px; opacity: 0.6; }
+        .tree-node.collapsed > ul { display: none; }
+        .tree-node.collapsed > .folder-title .arrow { transform: rotate(-90deg); }
+
+        /* Switch */
+        .switch { position: relative; display: inline-block; width: 36px; height: 20px; }
+        .switch input { display: none; }
+        .slider { position: absolute; top:0; left:0; right:0; bottom:0; background: #ccc; border-radius: 20px; transition: .3s; }
+        .slider:before { position: absolute; content:""; height: 14px; width: 14px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: .3s; }
+        input:checked + .slider { background: var(--accent-color); }
+        input:checked + .slider:before { transform: translateX(16px); }
+
+        /* Markdown & Code Copy Button */
+        .markdown-body { color: var(--text-color) !important; background: transparent !important; }
+        .markdown-body pre { position: relative; } /* For copy button positioning */
+        
+        .code-copy-btn {
+            position: absolute; top: 5px; right: 5px;
+            background: rgba(128,128,128,0.2); border: none; border-radius: 4px;
+            color: var(--text-color); padding: 4px 8px; font-size: 12px; cursor: pointer;
+            opacity: 0; transition: opacity 0.2s;
+        }
+        .markdown-body pre:hover .code-copy-btn { opacity: 1; }
+        .code-copy-btn:hover { background: var(--accent-color); color: white; }
+
+        /* KaTeX Font Fix */
+        .katex { font-size: 1.1em; }
+    </style>
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.1.0/github-markdown-light.min.css" id="light-css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.1.0/github-markdown-dark.min.css" id="dark-css" disabled>
+</head>
+<body>
+
+    <div id="sidebar">
+        <div id="file-tree-container">
+            <div style="padding:20px; color:#888; text-align:center;">載入檔案中...</div>
+        </div>
+        <div id="sidebar-footer">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-weight:500; font-size:13px;">深色模式</span>
+                <label class="switch">
+                    <input type="checkbox" id="dark-mode-toggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div style="margin-top:8px; font-size:11px; color:#888; text-align:center;">v2.1.10 Mobile & LaTeX Fix</div>
+        </div>
+    </div>
+
+    <div id="resizer"></div>
+
+    <div id="main-container">
+        <div id="header-bar">
+            <button class="icon-btn" id="sidebar-toggle" title="切換側邊欄">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+            </button>
+            <button class="icon-btn" id="mode-cycle-btn" title="切換檢視模式">
+                <span id="mode-icon" style="font-size:18px;">📄</span> 
+            </button>
+            <div style="flex-grow:1;"></div>
+            <span id="current-file-label" style="font-size:12px; color:#888; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 200px;"></span>
+        </div>
+
+        <div id="view-markdown" class="view-panel active markdown-body"></div>
+        <div id="view-mindmap" class="view-panel"></div>
+        <pre id="view-raw" class="view-panel" style="font-family:monospace; font-size:14px;"></pre>
+
+        <div id="floating-toolbar">
+            <div style="font-size:12px; padding:0 8px; display:flex; align-items:center; font-weight:bold; color:var(--accent-color);" id="toolbar-mode-label">預覽</div>
+            <button class="tool-btn" id="btn-minus">－</button>
+            <button class="tool-btn" id="btn-plus">＋</button>
+            <button class="tool-btn" id="btn-fit">⛶</button>
+        </div>
+    </div>
+
+    <!-- 測量容器 -->
+    <div id="measure-container" style="position:absolute; visibility:hidden; pointer-events:none; top:0; left:0; width:auto; height:auto;"></div>
+
+    <script>
+        const CONFIG = {
+            user: 'klhrd',
+            repo: 'class_note',
+            branch: 'main',
+            exclude: ['README.md']
+        };
+
+        const STATE = {
+            mode: 0,
+            modes: [
+                { id: 'view-markdown', name: '預覽', icon: '📄' },
+                { id: 'view-mindmap', name: '心智圖', icon: '🧠' },
+                { id: 'view-raw', name: '原始碼', icon: '📝' }
+            ],
+            files: {},
+            currentPath: null,
+            markdown: '',
+            fontSize: 16,
+            zoom: null,
+            svg: null,
+            g: null,
+            rootData: null
+        };
+
+        const COLORS = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"];
+
+        window.onload = () => {
+            initSidebar();
+            initResizer();
+            initToolbar();
+            fetchFiles();
+            
+            if(localStorage.getItem('dark') === '1') {
+                document.getElementById('dark-mode-toggle').checked = true;
+                toggleDark(true);
+            }
+            if(localStorage.getItem('fontSize')) {
+                STATE.fontSize = parseInt(localStorage.getItem('fontSize'));
+                applyFontSize();
+            }
+
+            const hash = decodeURIComponent(location.hash.slice(1));
+            if(hash) loadFile(hash);
+        };
+
+        function initSidebar() {
+            document.getElementById('sidebar-toggle').onclick = () => document.body.classList.toggle('sidebar-closed');
+            document.getElementById('dark-mode-toggle').onchange = (e) => {
+                toggleDark(e.target.checked);
+                localStorage.setItem('dark', e.target.checked ? '1' : '0');
+            };
+        }
+
+        function toggleDark(isDark) {
+            if(isDark) {
+                document.body.classList.add('dark-mode');
+                document.getElementById('light-css').disabled = true;
+                document.getElementById('dark-css').disabled = false;
+            } else {
+                document.body.classList.remove('dark-mode');
+                document.getElementById('light-css').disabled = false;
+                document.getElementById('dark-css').disabled = true;
+            }
+            document.documentElement.style.setProperty('--current-text', isDark ? '#c9d1d9' : '#333333');
+            if(STATE.mode === 1) renderMindMap(STATE.markdown, STATE.rootTitle, false); 
+        }
+
+        function initResizer() {
+            const resizer = document.getElementById('resizer');
+            let isResizing = false;
+            resizer.onmousedown = (e) => { isResizing = true; document.body.style.cursor = 'col-resize'; e.preventDefault(); };
+            document.onmousemove = (e) => {
+                if(!isResizing) return;
+                let w = Math.max(150, Math.min(e.clientX, document.body.clientWidth * 0.8));
+                document.documentElement.style.setProperty('--sidebar-width', w + 'px');
+            };
+            document.onmouseup = () => { isResizing = false; document.body.style.cursor = ''; };
+        }
+
+        function initToolbar() {
+            document.getElementById('mode-cycle-btn').onclick = () => {
+                STATE.mode = (STATE.mode + 1) % 3;
+                updateModeUI();
+            };
+            document.getElementById('btn-plus').onclick = () => adjustZoom(1);
+            document.getElementById('btn-minus').onclick = () => adjustZoom(-1);
+            document.getElementById('btn-fit').onclick = resetView;
+        }
+
+        function updateModeUI() {
+            const m = STATE.modes[STATE.mode];
+            document.querySelectorAll('.view-panel').forEach(el => el.classList.remove('active'));
+            document.getElementById(m.id).classList.add('active');
+            document.getElementById('mode-icon').textContent = m.icon;
+            document.getElementById('toolbar-mode-label').textContent = m.name;
+
+            if(STATE.mode === 1) {
+                renderMindMap(STATE.markdown, STATE.rootTitle, false); 
+            }
+        }
+
+        function adjustZoom(dir) {
+            if(STATE.mode === 1 && STATE.svg) {
+                STATE.svg.transition().duration(200).call(STATE.zoom.scaleBy, dir > 0 ? 1.2 : 0.8);
+            } else {
+                STATE.fontSize = Math.max(12, Math.min(32, STATE.fontSize + (dir * 2)));
+                applyFontSize();
+            }
+        }
+
+        function resetView() {
+            if(STATE.mode === 1) fitMindMap();
+            else { STATE.fontSize = 16; applyFontSize(); }
+        }
+
+        function applyFontSize() {
+            document.getElementById('view-markdown').style.fontSize = STATE.fontSize + 'px';
+            document.getElementById('view-raw').style.fontSize = STATE.fontSize + 'px';
+            localStorage.setItem('fontSize', STATE.fontSize);
+        }
+
+        async function fetchFiles() {
+            try {
+                const url = `https://api.github.com/repos/${CONFIG.user}/${CONFIG.repo}/git/trees/${CONFIG.branch}?recursive=1`;
+                const res = await fetch(url);
+                if(!res.ok) throw new Error();
+                const data = await res.json();
+                const files = data.tree.filter(i => i.type === 'blob' && i.path.endsWith('.md') && !CONFIG.exclude.includes(i.path));
+                buildSidebar(files);
+            } catch(e) {
+                document.getElementById('file-tree-container').innerHTML = '<div style="color:red;padding:20px;text-align:center;">讀取失敗</div>';
+            }
+        }
+
+        function buildSidebar(files) {
+            const root = { children: {} };
+            files.forEach(f => {
+                const parts = f.path.split('/');
+                let curr = root;
+                parts.forEach((p, i) => {
+                    if(i === parts.length - 1) {
+                        if(!curr.files) curr.files = [];
+                        curr.files.push({ name: p.replace('.md',''), path: f.path });
+                    } else {
+                        if(!curr.children[p]) curr.children[p] = { children: {}, files: [], name: p };
+                        curr = curr.children[p];
+                    }
+                });
+            });
+            const container = document.getElementById('file-tree-container');
+            container.innerHTML = '<ul></ul>';
+            renderTree(root, container.querySelector('ul'));
+        }
+
+        function renderTree(node, parentEl) {
+            const dirs = Object.keys(node.children).sort();
+            dirs.forEach(dName => {
+                let dirNode = node.children[dName];
+                let displayName = dName;
+                
+                // Smart Compact
+                while (Object.keys(dirNode.children).length === 1 && (!dirNode.files || dirNode.files.length === 0)) {
+                    const singleChildName = Object.keys(dirNode.children)[0];
+                    dirNode = dirNode.children[singleChildName];
+                    displayName += '/' + singleChildName;
+                }
+
+                if (Object.keys(dirNode.children).length === 0 && dirNode.files && dirNode.files.length === 1) {
+                    const f = dirNode.files[0];
+                    const li = document.createElement('li');
+                    li.innerHTML = `<div class="file-link" data-path="${f.path}">📄 ${displayName}/${f.name}</div>`;
+                    li.querySelector('.file-link').onclick = () => loadFile(f.path);
+                    parentEl.appendChild(li);
+                    return;
+                }
+
+                const li = document.createElement('li');
+                li.className = 'tree-node collapsed';
+                li.innerHTML = `<div class="folder-title"><span class="arrow">▼</span> 📁 ${displayName}</div><ul></ul>`;
+                li.querySelector('.folder-title').onclick = (e) => {
+                    e.currentTarget.parentElement.classList.toggle('collapsed');
+                };
+                parentEl.appendChild(li);
+                renderTree(dirNode, li.querySelector('ul'));
+            });
+
+            if(node.files) {
+                node.files.sort((a,b)=>a.name.localeCompare(b.name)).forEach(f => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<div class="file-link" data-path="${f.path}">📄 ${f.name}</div>`;
+                    li.querySelector('.file-link').onclick = () => loadFile(f.path);
+                    parentEl.appendChild(li);
+                });
+            }
+        }
+
+        async function loadFile(path) {
+            STATE.currentPath = path;
+            document.querySelectorAll('.file-link').forEach(el => el.classList.remove('active'));
+            const active = document.querySelector(`.file-link[data-path="${path}"]`);
+            if(active) {
+                active.classList.add('active');
+                let p = active.parentElement;
+                while(p && p.id !== 'file-tree-container') {
+                    if(p.classList.contains('tree-node')) p.classList.remove('collapsed');
+                    p = p.parentElement;
+                }
+            }
+            
+            document.getElementById('current-file-label').innerText = path;
+            location.hash = path;
+
+            try {
+                const url = `https://raw.githubusercontent.com/${CONFIG.user}/${CONFIG.repo}/${CONFIG.branch}/${path}`;
+                const res = await fetch(url);
+                if(!res.ok) throw new Error('Network');
+                let text = await res.text();
+                
+                // YAML Handling
+                let title = null;
+                const yamlMatch = text.match(/^---[\r\n]+([\s\S]*?)[\r\n]+---[\r\n]*/);
+                if (yamlMatch) {
+                    const yaml = yamlMatch[1];
+                    const titleMatch = yaml.match(/title:\s*(.*)/);
+                    if (titleMatch) title = titleMatch[1].trim().replace(/^['"]|['"]$/g, '');
+                    text = text.replace(yamlMatch[0], ''); // Remove YAML from content
+                }
+                STATE.rootTitle = title;
+                STATE.markdown = text;
+
+                // Render Markdown
+                const mdContainer = document.getElementById('view-markdown');
+                mdContainer.innerHTML = marked.parse(text);
+                addCopyButtons(mdContainer); // Add Copy Buttons
+                
+                document.getElementById('view-raw').textContent = text;
+                
+                renderMathInElement(mdContainer, {
+                    delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]
+                });
+
+                if(STATE.mode === 1) renderMindMap(text, title);
+                else STATE.svg = null;
+
+            } catch(e) { console.error(e); }
+        }
+
+        function addCopyButtons(container) {
+            container.querySelectorAll('pre code').forEach(codeBlock => {
+                const pre = codeBlock.parentElement;
+                if (pre.querySelector('.code-copy-btn')) return;
+                
+                const btn = document.createElement('button');
+                btn.className = 'code-copy-btn';
+                btn.innerText = '複製';
+                btn.onclick = () => {
+                    navigator.clipboard.writeText(codeBlock.innerText).then(() => {
+                        btn.innerText = '已複製!';
+                        setTimeout(() => btn.innerText = '複製', 2000);
+                    });
+                };
+                pre.appendChild(btn);
+            });
+        }
+
+        // ================= MindMap Engine v2.1.10 =================
+        function measureNodeSize(html) {
+            const container = document.getElementById('measure-container');
+            const div = document.createElement('div');
+            div.className = 'node-content-div';
+            div.innerHTML = html;
+            container.appendChild(div);
+            // v2.1.10 Fix: Ensure LaTeX math renders for size calculation
+            renderMathInElement(div, {
+                delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}],
+                throwOnError: false
+            });
+            const w = div.offsetWidth;
+            const h = div.offsetHeight;
+            container.removeChild(div);
+            return { width: Math.max(20, w) + 15, height: Math.max(20, h) + 8 };
+        }
+
+        function renderMindMap(markdown, rootTitle, isRedraw = false) {
+            const container = document.getElementById('view-mindmap');
+            if (!isRedraw) {
+                container.innerHTML = '';
+                if (!markdown) return;
+                const rootData = parseMarkdownToTree(markdown, rootTitle);
+                
+                const measureAll = (node) => {
+                    const size = measureNodeSize(node.html); 
+                    node.width = size.width;
+                    node.height = size.height;
+                    node.isHeader = node.depth <= 2; 
+                    if(node.children) node.children.forEach(measureAll);
+                };
+                measureAll(rootData);
+                STATE.rootData = rootData;
+            } else { container.innerHTML = ''; }
+
+            const root = d3.hierarchy(STATE.rootData);
+            if(!isRedraw) root.descendants().forEach(d => { if (d.depth > 1) d._children = d.children; });
+
+            const svg = d3.select(container).append('svg').attr('width', '100%').attr('height', '100%');
+            const g = svg.append('g');
+            STATE.svg = svg; STATE.g = g;
+
+            const zoom = d3.zoom().scaleExtent([0.1, 5]).on('zoom', (e) => g.attr('transform', e.transform));
+            STATE.zoom = zoom; svg.call(zoom).on('dblclick.zoom', null);
+
+            update(root);
+            if(!isRedraw) setTimeout(fitMindMap, 50);
+
+            // Render LaTeX inside Mindmap after Update
+            setTimeout(() => {
+                renderMathInElement(container, {
+                    delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}],
+                    throwOnError: false
+                });
+            }, 50);
+
+            function update(source) {
+                // Layout
+                root.eachBefore(d => {
+                    d.y = d.parent ? (d.parent.y + d.parent.data.width + 50) : 50;
+                });
+                
+                let currentY = 0;
+                root.eachAfter(d => {
+                    const children = d.children;
+                    if (!children || children.length === 0) {
+                        d.x = currentY;
+                        const gap = (d.data.isHeader) ? 20 : 10;
+                        currentY += d.data.height + gap;
+                    } else {
+                        d.x = (children[0].x + children[children.length - 1].x) / 2;
+                        if (d.x + d.data.height/2 + 10 > currentY) {
+                            currentY = d.x + d.data.height/2 + 10;
+                        }
+                    }
+                });
+
+                const nodes = root.descendants();
+                const links = root.links();
+
+                const node = g.selectAll('.mindmap-node').data(nodes, d => d.id || (d.id = Math.random()));
+                const nodeEnter = node.enter().append('g')
+                    .attr('class', 'mindmap-node')
+                    .attr('transform', d => `translate(${source.y0||d.y}, ${source.x0||d.x})`)
+                    .attr('opacity', 0);
+
+                const fo = nodeEnter.append('foreignObject')
+                    .attr('class', 'node-foreign-object')
+                    .attr('width', d => d.data.width)
+                    .attr('height', d => d.data.height)
+                    .attr('x', 0)
+                    .attr('y', d => -d.data.height + 5); 
+
+                fo.append('xhtml:div')
+                    .attr('class', 'node-content-div')
+                    .style('color', document.body.classList.contains('dark-mode') ? '#c9d1d9' : '#333333')
+                    .html(d => d.data.html); 
+
+                nodeEnter.append('path')
+                    .attr('d', d => `M 0 0 L ${d.data.width} 0`)
+                    .attr('stroke', d => COLORS[d.depth % COLORS.length])
+                    .attr('stroke-width', 2).attr('fill', 'none');
+
+                // v2.1.10 Icon Fix:
+                // Collapsed (has _children) -> Solid Fill (Click to Expand)
+                // Expanded (has children) -> Hollow Fill (Click to Collapse)
+                nodeEnter.append('circle')
+                    .attr('class', 'mindmap-toggle')
+                    .attr('cx', d => d.data.width)
+                    .attr('cy', 0).attr('r', 6)
+                    .attr('stroke', d => COLORS[d.depth % COLORS.length])
+                    .on('click', (e, d) => {
+                        e.stopPropagation();
+                        if(d.children) { d._children = d.children; d.children = null; }
+                        else { d.children = d._children; d._children = null; }
+                        update(d);
+                    });
+
+                const nodeUpdate = node.merge(nodeEnter).transition().duration(400)
+                    .attr('transform', d => `translate(${d.y}, ${d.x})`).attr('opacity', 1);
+                
+                nodeUpdate.select('circle')
+                    .style('fill', d => d._children ? COLORS[d.depth % COLORS.length] : 'var(--bg-color)')
+                    .style('display', d => (d.children || d._children) ? 'inline' : 'none');
+
+                node.exit().transition().duration(400).attr('opacity', 0).remove();
+
+                const link = g.selectAll('.mindmap-link').data(links, d => d.target.id);
+                const linkEnter = link.enter().insert('path', 'g').attr('class', 'mindmap-link')
+                    .attr('stroke', d => COLORS[d.target.depth % COLORS.length])
+                    .attr('d', d => {
+                        const o = {x: source.x0||d.source.x, y: source.y0||d.source.y, w: d.source.data.width};
+                        return diagonal({x: o.x, y: o.y + o.w}, {x: o.x, y: o.y + o.w}); 
+                    });
+                link.merge(linkEnter).transition().duration(400)
+                    .attr('d', d => diagonal({x: d.source.x, y: d.source.y + d.source.data.width}, {x: d.target.x, y: d.target.y}));
+                link.exit().transition().duration(400).attr('opacity', 0).remove();
+
+                nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
+            }
+
+            function diagonal(s, t) {
+                return `M ${s.y} ${s.x} C ${(s.y + t.y) / 2} ${s.x}, ${(s.y + t.y) / 2} ${t.x}, ${t.y} ${t.x}`;
+            }
+        }
+
+        function fitMindMap() {
+            if(!STATE.g) return;
+            const bounds = STATE.g.node().getBBox();
+            if(bounds.width === 0) return;
+            const parent = STATE.svg.node().parentElement;
+            const scale = 0.9 / Math.max(bounds.width / parent.clientWidth, bounds.height / parent.clientHeight);
+            const tx = parent.clientWidth/2 - scale * (bounds.x + bounds.width/2);
+            const ty = parent.clientHeight/2 - scale * (bounds.y + bounds.height/2);
+            STATE.svg.transition().duration(750).call(STATE.zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+        }
+
+        function parseMarkdownToTree(md, rootTitle) {
+            const tokens = marked.lexer(md);
+            const contentTokens = tokens.filter(t => t.type !== 'space' && t.type !== 'hr');
+            // Use YAML Title as root if available, otherwise default
+            const root = { html: rootTitle || 'Root', children: [], depth: 0 };
+            const stack = [root];
+
+            contentTokens.forEach(token => {
+                if (token.type === 'heading') {
+                    const level = token.depth;
+                    const html = marked.parseInline(token.text);
+                    const node = { html, children: [], depth: level };
+                    while (stack.length > 1 && stack[stack.length - 1].depth >= level) stack.pop();
+                    stack[stack.length - 1].children.push(node);
+                    stack.push(node);
+                } 
+                else if (token.type === 'list') {
+                    processList(token, stack[stack.length - 1], stack[stack.length - 1].depth + 1);
+                }
+                else if (token.type === 'table') {
+                    let tableHtml = marked.parser([token]);
+                    stack[stack.length - 1].children.push({ html: tableHtml, children: [], depth: stack[stack.length - 1].depth + 1 });
+                }
+                else if (['paragraph', 'blockquote', 'code'].includes(token.type)) {
+                    let html = marked.parser([token]).replace(/^<p>|<\/p>\n?$/g, '');
+                    stack[stack.length - 1].children.push({ html, children: [], depth: stack[stack.length - 1].depth + 1 });
+                }
+            });
+            // If only one child at depth 1, promote it (unless YAML title overrides)
+            return (!rootTitle && root.children.length === 1 && root.children[0].depth === 1) ? root.children[0] : root;
+        }
+
+        function processList(listToken, parentNode, currentDepth) {
+            listToken.items.forEach(item => {
+                let itemHtml = '';
+                const nestedLists = [];
+                item.tokens.forEach(t => {
+                    if (t.type === 'list') nestedLists.push(t);
+                    else itemHtml += marked.parser([t]);
+                });
+                itemHtml = itemHtml.replace(/^<p>|<\/p>\n?$/g, '').trim() || 'List Item';
+                const node = { html: itemHtml, children: [], depth: currentDepth };
+                parentNode.children.push(node);
+                nestedLists.forEach(nl => processList(nl, node, currentDepth + 1));
+            });
+        }
+    </script>
+</body>
+</html>
