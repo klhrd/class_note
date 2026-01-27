@@ -5,16 +5,16 @@ my class note
 其他懶得弄了
 
 ## 地理
-- 9th
-  - U1 [歐洲：自然環境、人口與產業](https://klhrd.github.io/class_note/geography/9th/U1/)
-  - U2 [歐洲聯盟與俄羅斯：發展、環境與產業](https://klhrd.github.io/class_note/geography/9th/U2/)
-  - U3 [北美洲地理、文化與經濟](https://klhrd.github.io/class_note/geography/9th/U3/)
+- G09a
+  - U1 [歐洲：自然環境、人口與產業](https://klhrd.github.io/class_note/geography/G09a/U1/)
+  - U2 [歐洲聯盟與俄羅斯：發展、環境與產業](https://klhrd.github.io/class_note/geography/G09a/U2/)
+  - U3 [北美洲地理、文化與經濟](https://klhrd.github.io/class_note/geography/G09a/U3/)
 
 ## 歷史
-- 9th
-  - U1 [西亞與埃及的古代文明](https://klhrd.github.io/class_note/history/9th/U1/)
-  - U2 [古希臘與羅馬的政治及文化](https://klhrd.github.io/class_note/history/9th/U2/)
-  - U3 [普世宗教的發展與中古時期概述](https://klhrd.github.io/class_note/history/9th/U3/)
+- G09a
+  - U1 [西亞與埃及的古代文明](https://klhrd.github.io/class_note/history/G09a/U1/)
+  - U2 [古希臘與羅馬的政治及文化](https://klhrd.github.io/class_note/history/G09a/U2/)
+  - U3 [普世宗教的發展與中古時期概述](https://klhrd.github.io/class_note/history/G09a/U3/)
 
 ## 公民
 - [我國政府](https://klhrd.github.io/class_note/civics/government/)
