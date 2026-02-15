@@ -68,28 +68,32 @@ real, parameter :: c = 299792458.0
 ### **控制**
 
 #### `if`
-1. 單行 if (Logical IF)
-如果你只需要在條件成立時執行一件小事，可以用最簡單的一行寫法：
-if (temperature > 100.0) print *, "警告：水分已沸騰！"
+1. 單行 `if` (Logical IF)  
+    時機：只執行一件小事  
+    `if (temperature > 100.0) print *, "警告：水分已沸騰！"`  
+    不需要 then 也不需要 end if  
 
-這種寫法不需要 then 也不需要 end if，適合處理簡單的錯誤檢查。
-2. 標準塊狀 if (IF-THEN-END IF) 🧱
-這是最常用的結構，適合當條件成立時需要執行多行指令：
-if (velocity < 0.0) then
-    velocity = abs(velocity)  ! 取絕對值
-    direction = -1            ! 標記方向反向
-end if
+2. 標準塊狀 `if` (IF-THEN-END IF)  
+    時機：執行多行指令  
+    ```fortran
+    if (velocity < 0.0) then
+        velocity = abs(velocity)  ! 取絕對值
+        direction = -1            ! 標記方向反向
+    end if
+    ```
 
-3. 多重分支 if (IF-ELSE IF-ELSE) 🚦
-當你有三種以上的狀況要處理時，就會用到 else if：
-if (x > 0.0) then
-    print *, "正數"
-else if (x < 0.0) then
-    print *, "負數"
-else
-    print *, "這是零"
-end if
-
+3. 多重分支 `if` (IF-ELSE IF-ELSE)  
+    時機：有三種以上的狀況要處理時  
+    ```fortran
+    if (x > 0.0) then
+        print *, "正數"
+    else if (x < 0.0) then
+        print *, "負數"
+    else
+        print *, "這是零"
+    end if
+    ```
+    
 ⚠️ 重要細節：邏輯運算子
 在寫條件（括號裡的部分）時，你會用到比較符號。現代 Fortran 支援兩種寫法，你可以挑順眼的用：
 | 數學意義 | 現代符號 | 老派寫法 (仍通用) |
