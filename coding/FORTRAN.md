@@ -1,3 +1,13 @@
+<style>
+  h1 { font-size: 1.80rem; }
+  h2 { font-size: 1.65rem; }
+  h3 { font-size: 1.50rem; }
+  h4 { font-size: 1.35rem; }
+  h5 { font-size: 1.20rem; }
+  h6 { font-size: 1.05rem; }
+  p { font-size: 1.00rem; }
+</style>
+
 # 🚀 Fortran 高效率速查筆記：目錄架構
 
 ## 1. 數據容器與記憶體
@@ -106,7 +116,7 @@ end if
 #### Do While：條件循環  
 #### Do Concurrent：現代並行優化迴圈
 
-## 3：核心運算與陣列 (Computation & Arrays)
+## 3. 核心運算與陣列 (Computation & Arrays)
 
 #### 3-1. 算術運算子 (Arithmetic Operators)
 | 運算子 | 說明 | 範例 | 優先級 |
@@ -115,7 +125,8 @@ end if
 | `*` | 乘法 | `a*b` | 2 |
 | `/` | 除法 | `a/b` | 2 |
 | `+` | 加法 | `a+b` | 3 |
-| `-` | 減法 (或負號) | `-a+b` | 3 |
+| `-` | 減法 (或負號) | `-a+b` | 3 |  
+
 **注意點：**
 - **整數除法**：若兩者皆為整數，結果會無條件捨去小數（例如 `7/2` 結果為 3）。  
 - **乘冪限制**：`(-2.0)**2.0` 會報錯，因為實數底數不能為負（需用整數指數 `(-2.0)**2`）。
